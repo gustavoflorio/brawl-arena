@@ -1,0 +1,25 @@
+# Rojo / Roblox generated and binary files
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxm.lock
+*.rbxmx.lock
+build.rbxl
+build.rbxlx
+sourcemap.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Claude Code settings (contains API keys)
+.claude/settings.json
+.mcp.json
+
+# OS artifacts
+.DS_Store
+Thumbs.db
