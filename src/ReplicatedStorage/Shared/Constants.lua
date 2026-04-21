@@ -124,7 +124,7 @@ local Constants = {
 		ModeDisplay = {
 			Level = { title = "TOP LEVEL", scoreSuffix = "", accent = Color3.fromRGB(80, 180, 255) },
 			Kills = { title = "TOP KILLS", scoreSuffix = " kills", accent = Color3.fromRGB(255, 100, 100) },
-			TimeAlive = { title = "TOP TEMPO VIVO", scoreSuffix = "", accent = Color3.fromRGB(120, 220, 120) },
+			TimeAlive = { title = "TOP SURVIVAL", scoreSuffix = "", accent = Color3.fromRGB(120, 220, 120) },
 		},
 		TopN = 10,
 		RefreshIntervalSeconds = 60,

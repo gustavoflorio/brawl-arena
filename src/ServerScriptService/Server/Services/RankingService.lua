@@ -199,7 +199,7 @@ function RankingService:_renderBoard(mode: string, entries: { Entry })
 		local empty = Instance.new("TextLabel")
 		empty.Size = UDim2.new(1, 0, 0, 50)
 		empty.BackgroundTransparency = 1
-		empty.Text = "Sem registros ainda..."
+		empty.Text = "No records yet..."
 		empty.TextColor3 = Color3.fromRGB(160, 160, 180)
 		empty.TextScaled = true
 		empty.Font = Enum.Font.Gotham
@@ -256,7 +256,7 @@ function RankingService:_renderBoard(mode: string, entries: { Entry })
 	footer.Size = UDim2.new(1, -20, 0, 20)
 	footer.Position = UDim2.new(0, 10, 1, -28)
 	footer.BackgroundTransparency = 1
-	footer.Text = string.format("Atualizado: %s", os.date("!%H:%M UTC") :: string)
+	footer.Text = string.format("Updated: %s", os.date("!%H:%M UTC") :: string)
 	footer.TextColor3 = Color3.fromRGB(120, 120, 140)
 	footer.TextScaled = true
 	footer.Font = Enum.Font.Gotham
