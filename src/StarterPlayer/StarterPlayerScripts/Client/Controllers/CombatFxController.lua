@@ -314,6 +314,7 @@ local function bindKnockbackListener(character: Model)
 end
 
 local function preloadDiagnostic(character: Model)
+	local ContentProvider = game:GetService("ContentProvider")
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return
@@ -323,6 +324,7 @@ local function preloadDiagnostic(character: Model)
 		return
 	end
 	print(string.format("[CombatFxController] === PRELOAD DIAGNOSTIC rig=%s ===", tostring(humanoid.RigType)))
+
 	local tests = {
 		{ name = "Punch", id = Constants.Assets.PunchAnimationId },
 		{ name = "HeavyPunch", id = Constants.Assets.HeavyPunchAnimationId },
@@ -330,20 +332,42 @@ local function preloadDiagnostic(character: Model)
 		{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
 		{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
 	}
-	for _, test in ipairs(tests) do
+
+	local anims = {}
+	for _, t in ipairs(tests) do
 		local anim = Instance.new("Animation")
-		anim.AnimationId = test.id
+		anim.Name = "Diag_" .. t.name
+		anim.AnimationId = t.id
+		anim.Parent = character
+		t.anim = anim
+		table.insert(anims, anim)
+	end
+
+	print("[CombatFxController]   PreloadAsync...")
+	local preloadOk, preloadErr = pcall(function()
+		ContentProvider:PreloadAsync(anims, function(contentId, status)
+			print(string.format("[CombatFxController]     preload %s → %s", tostring(contentId), tostring(status)))
+		end)
+	end)
+	print(string.format("[CombatFxController]   PreloadAsync done (ok=%s err=%s)", tostring(preloadOk), tostring(preloadErr)))
+
+	for _, t in ipairs(tests) do
 		local ok, track = pcall(function()
-			return animator:LoadAnimation(anim)
+			return animator:LoadAnimation(t.anim)
 		end)
 		if ok and track then
-			task.wait(0.25)
-			print(string.format("[CombatFxController]   %s id=%s length=%.3fs", test.name, test.id, track.Length))
+			-- Espera até 5s pelo track.Length popular
+			local waited = 0
+			while track.Length <= 0 and waited < 5 do
+				task.wait(0.25)
+				waited = waited + 0.25
+			end
+			print(string.format("[CombatFxController]   %-12s length=%.3fs waited=%.2fs", t.name, track.Length, waited))
 			track:Destroy()
 		else
-			warn(string.format("[CombatFxController]   %s LOAD FAIL: %s", test.name, tostring(track)))
+			warn(string.format("[CombatFxController]   %s LOAD FAIL: %s", t.name, tostring(track)))
 		end
-		anim:Destroy()
+		t.anim:Destroy()
 	end
 	print("[CombatFxController] === END PRELOAD DIAGNOSTIC ===")
 end
