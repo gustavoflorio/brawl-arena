@@ -143,7 +143,7 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	local damage = arenaService:GetDamage(target)
 
 	local speed = Constants.Combat.KnockbackBase * (1 + (damage / 100) * Constants.Combat.KnockbackGrowth) * damageMultiplier
-	targetRoot.AssemblyLinearVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical * damageMultiplier, 0)
+	local kbVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical * damageMultiplier, 0)
 
 	local targetCharacter = target.Character
 	if targetCharacter then
@@ -154,6 +154,15 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
+
+		-- Knockback via attribute pattern: client do target aplica velocity
+		-- (Roblox physics ownership do character pertence ao owner client).
+		local kbAttr = Constants.CharacterAttributes.KBVelocity
+		local kbSeqAttr = Constants.CharacterAttributes.KBSeq
+		targetCharacter:SetAttribute(kbAttr, kbVelocity)
+		local currentKBSeq = targetCharacter:GetAttribute(kbSeqAttr)
+		local nextKBSeq = (typeof(currentKBSeq) == "number" and currentKBSeq or 0) + 1
+		targetCharacter:SetAttribute(kbSeqAttr, nextKBSeq)
 	end
 
 	arenaService:PublishState(target)

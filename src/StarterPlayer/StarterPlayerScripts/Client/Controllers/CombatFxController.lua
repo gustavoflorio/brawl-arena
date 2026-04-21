@@ -10,6 +10,8 @@ local localPlayer = Players.LocalPlayer
 
 local HIT_SEQ_ATTR = Constants.CharacterAttributes.HitSeq
 local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
+local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
+local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
 local PUNCH_DURATION = 0.7
 local HEAVY_PUNCH_DURATION = 1.0
 local DODGE_ROLL_DURATION = 1.0
@@ -239,11 +241,41 @@ local function bindEliminationListener(character: Model)
 	end)
 end
 
+local function bindKnockbackListener(character: Model)
+	-- Só roda pro próprio character do local player — ele tem physics ownership
+	-- e é o único que consegue aplicar velocity que replica corretamente.
+	local lastSeen = character:GetAttribute(KB_SEQ_ATTR)
+	if typeof(lastSeen) ~= "number" then
+		lastSeen = 0
+	end
+	character:GetAttributeChangedSignal(KB_SEQ_ATTR):Connect(function()
+		local seq = character:GetAttribute(KB_SEQ_ATTR)
+		if typeof(seq) ~= "number" or seq <= lastSeen then
+			return
+		end
+		lastSeen = seq
+		local velocity = character:GetAttribute(KB_VEL_ATTR)
+		if typeof(velocity) ~= "Vector3" then
+			return
+		end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root or not root:IsA("BasePart") then
+			return
+		end
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+		end
+		root.AssemblyLinearVelocity = velocity
+	end)
+end
+
 local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
 		if player == localPlayer then
 			bindEliminationListener(character)
+			bindKnockbackListener(character)
 			fxController:ResetCharacterTracks()
 		end
 	end

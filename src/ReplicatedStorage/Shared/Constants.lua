@@ -50,6 +50,10 @@ local Constants = {
 		LastHitterId = "BrawlLastHitterId",
 		LastHitTime = "BrawlLastHitTime",
 		InvincibleUntil = "BrawlInvincibleUntil",
+		DamagePercent = "BrawlDamagePercent",
+		KBVelocity = "BrawlKBVelocity",
+		KBSeq = "BrawlKBSeq",
+		ArenaActive = "BrawlArenaActive",
 	},
 	XP = {
 		Base = 20,

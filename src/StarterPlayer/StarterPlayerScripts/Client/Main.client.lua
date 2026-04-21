@@ -13,6 +13,7 @@ local controllerOrder = {
 	"LevelUpController",
 	"RankUpController",
 	"SummaryController",
+	"DamageLabelController",
 }
 
 local controllers: { [string]: any } = {}

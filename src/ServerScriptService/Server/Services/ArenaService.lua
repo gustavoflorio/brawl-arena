@@ -26,10 +26,8 @@ ArenaService._services = nil :: Services?
 ArenaService._playerStates = {} :: { [Player]: PlayerState }
 ArenaService._padConnection = nil :: RBXScriptConnection?
 ArenaService._heartbeatConnection = nil :: RBXScriptConnection?
-ArenaService._passiveDripConnection = nil :: RBXScriptConnection?
 
 local TOUCH_DEBOUNCE = 0.5
-local PASSIVE_DRIP_INTERVAL = 1.0
 
 local function resolveLobbyFolder(): Instance?
 	return Workspace:FindFirstChild("Lobby")
@@ -115,14 +113,25 @@ function ArenaService:GetDamage(player: Player): number
 	return state.damagePercent
 end
 
+function ArenaService:_syncDamageAttribute(player: Player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local state = self:_ensureState(player)
+	character:SetAttribute(Constants.CharacterAttributes.DamagePercent, math.floor(state.damagePercent))
+end
+
 function ArenaService:AddDamage(player: Player, amount: number)
 	local state = self:_ensureState(player)
 	state.damagePercent = state.damagePercent + amount
+	self:_syncDamageAttribute(player)
 end
 
 function ArenaService:ResetDamage(player: Player)
 	local state = self:_ensureState(player)
 	state.damagePercent = 0
+	self:_syncDamageAttribute(player)
 end
 
 function ArenaService:RegisterKill(player: Player, xpGained: number)
@@ -178,6 +187,8 @@ function ArenaService:TeleportToArena(player: Player)
 		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, now + Constants.Arena.InvincibilityDuration)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
+		character:SetAttribute(Constants.CharacterAttributes.DamagePercent, 0)
+		character:SetAttribute(Constants.CharacterAttributes.ArenaActive, true)
 	end
 
 	local state = self:_ensureState(player)
@@ -262,6 +273,8 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
 		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, 0)
+		character:SetAttribute(Constants.CharacterAttributes.DamagePercent, 0)
+		character:SetAttribute(Constants.CharacterAttributes.ArenaActive, false)
 	end
 
 	state.state = Constants.PlayerState.InLobby
@@ -353,40 +366,8 @@ function ArenaService:_watchOutOfBounds()
 	end)
 end
 
-function ArenaService:_startPassiveDrip()
-	if self._passiveDripConnection then
-		self._passiveDripConnection:Disconnect()
-	end
-	self._passiveDripConnection = task.spawn(function()
-		while true do
-			task.wait(PASSIVE_DRIP_INTERVAL)
-			local services = self._services :: Services?
-			if not services or not services.PlayerDataService then
-				continue
-			end
-			for player, state in pairs(self._playerStates) do
-				if state.state == Constants.PlayerState.InArena and services.PlayerDataService:IsLoaded(player) then
-					local newLevel, _, leveledUp = services.PlayerDataService:AddXP(player, Constants.XP.PassiveDripPerSecond)
-					state.xpSinceEnter += Constants.XP.PassiveDripPerSecond
-					if leveledUp then
-						local remote = Remotes.GetEventsRemote()
-						if remote then
-							remote:FireAllClients({
-								type = Constants.EventTypes.LevelUp,
-								payload = {
-									userId = player.UserId,
-									previousLevel = newLevel - 1,
-									newLevel = newLevel,
-								},
-							})
-						end
-					end
-					self:PublishState(player)
-				end
-			end
-		end
-	end) :: any
-end
+-- Passive XP drip removido: XP agora vem apenas de kills (via KillProcessor).
+-- TotalTimeAlive continua sendo rastreado em ReturnToLobby pra alimentar o leaderboard.
 
 function ArenaService:_onPlayerAdded(player: Player)
 	self:_ensureState(player)
@@ -454,7 +435,6 @@ function ArenaService:Start()
 	end
 
 	self:_watchOutOfBounds()
-	self:_startPassiveDrip()
 end
 
 return ArenaService
