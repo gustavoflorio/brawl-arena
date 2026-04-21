@@ -79,7 +79,15 @@ function CombatFxController:_loadTrack(kind: TrackKind, assetId: string, priorit
 	local track = trackOrErr :: AnimationTrack
 	track.Priority = priority
 	track.Looped = looped
-	print(string.format("[CombatFxController] _loadTrack %s OK (priority=%s, looped=%s)", kind, tostring(priority), tostring(looped)))
+	print(string.format(
+		"[CombatFxController] _loadTrack %s OK — assetId=%s rig=%s length=%.3fs priority=%s looped=%s",
+		kind,
+		assetId,
+		tostring(humanoid.RigType),
+		track.Length,
+		tostring(priority),
+		tostring(looped)
+	))
 	return track
 end
 
@@ -104,6 +112,17 @@ function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 	end
 	self._tracks[kind] = track
 	track:Play(0.05)
+	task.delay(0.1, function()
+		if self._tracks[kind] == track then
+			print(string.format(
+				"[CombatFxController] %s status pós-play: IsPlaying=%s TimePosition=%.3f Length=%.3f",
+				kind,
+				tostring(track.IsPlaying),
+				track.TimePosition,
+				track.Length
+			))
+		end
+	end)
 	task.delay(duration, function()
 		if self._tracks[kind] == track then
 			self._tracks[kind] = nil
@@ -155,6 +174,17 @@ function CombatFxController:PlayRunning()
 		existing:Play(0.1)
 		self._runningPlaying = true
 		print("[CombatFxController] Running track iniciada")
+		task.delay(0.15, function()
+			if existing and self._tracks["Running"] == existing then
+				print(string.format(
+					"[CombatFxController] Running status pós-play: IsPlaying=%s TimePosition=%.3f Speed=%.2f Length=%.3f",
+					tostring(existing.IsPlaying),
+					existing.TimePosition,
+					existing.Speed,
+					existing.Length
+				))
+			end
+		end)
 	else
 		warn("[CombatFxController] PlayRunning falhou — track nil")
 	end
