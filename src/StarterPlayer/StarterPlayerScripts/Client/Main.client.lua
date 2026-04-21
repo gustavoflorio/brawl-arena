@@ -8,6 +8,11 @@ local controllerOrder = {
 	"CombatFxController",
 	"InputController",
 	"HudController",
+	"KillFeedController",
+	"StreakController",
+	"LevelUpController",
+	"RankUpController",
+	"SummaryController",
 }
 
 local controllers: { [string]: any } = {}

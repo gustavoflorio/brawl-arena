@@ -13,6 +13,7 @@ type Services = { [string]: any }
 local CombatService = {}
 CombatService._services = nil :: Services?
 CombatService._lastPunch = {} :: { [Player]: number }
+CombatService._requestWindow = {} :: { [Player]: { number } }
 
 local function getCharacterRoot(player: Player): BasePart?
 	local character = player.Character
@@ -38,6 +39,18 @@ local function isAlive(player: Player): boolean
 	return humanoid.Health > 0
 end
 
+local function isInvincible(player: Player): boolean
+	local character = player.Character
+	if not character then
+		return false
+	end
+	local until_ = character:GetAttribute(Constants.CharacterAttributes.InvincibleUntil)
+	if typeof(until_) ~= "number" then
+		return false
+	end
+	return os.clock() < until_
+end
+
 local function resolveFacing(root: BasePart): Vector3
 	local look = root.CFrame.LookVector
 	if look.X > 0.1 then
@@ -52,6 +65,29 @@ local function resolveFacing(root: BasePart): Vector3
 		return Vector3.new(-1, 0, 0)
 	end
 	return Vector3.new(1, 0, 0)
+end
+
+function CombatService:_checkRateLimit(player: Player): boolean
+	local window = self._requestWindow[player]
+	if not window then
+		window = {}
+		self._requestWindow[player] = window
+	end
+	local now = os.clock()
+	local cutoff = now - Constants.Combat.RateLimitWindow
+	local compact: { number } = {}
+	for _, timestamp in ipairs(window) do
+		if timestamp >= cutoff then
+			table.insert(compact, timestamp)
+		end
+	end
+	if #compact >= Constants.Combat.RateLimitMaxRequests then
+		self._requestWindow[player] = compact
+		return false
+	end
+	table.insert(compact, now)
+	self._requestWindow[player] = compact
+	return true
 end
 
 function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Vector3): { Player }
@@ -77,9 +113,10 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 				and not seen[targetPlayer]
 				and arenaService:GetState(targetPlayer) == Constants.PlayerState.InArena
 				and isAlive(targetPlayer)
+				and not isInvincible(targetPlayer)
 			then
-				local targetRoot = getCharacterRoot(targetPlayer)
-				if targetRoot then
+				local targetRoot = character:FindFirstChild("HumanoidRootPart")
+				if targetRoot and targetRoot:IsA("BasePart") then
 					local delta = targetRoot.Position - origin
 					if delta.X * facing.X >= -0.1 then
 						seen[targetPlayer] = true
@@ -108,10 +145,13 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 
 	local targetCharacter = target.Character
 	if targetCharacter then
-		local attr = Constants.CharacterAttributes.HitSeq
-		local current = targetCharacter:GetAttribute(attr)
-		local nextSeq = (typeof(current) == "number" and current or 0) + 1
-		targetCharacter:SetAttribute(attr, nextSeq)
+		local attrHit = Constants.CharacterAttributes.HitSeq
+		local currentHit = targetCharacter:GetAttribute(attrHit)
+		local nextSeq = (typeof(currentHit) == "number" and currentHit or 0) + 1
+		targetCharacter:SetAttribute(attrHit, nextSeq)
+
+		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
+		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
 	end
 
 	arenaService:PublishState(target)
@@ -120,6 +160,10 @@ end
 function CombatService:_handlePunch(puncher: Player)
 	local arenaService = (self._services :: Services).ArenaService
 	if arenaService:GetState(puncher) ~= Constants.PlayerState.InArena then
+		return
+	end
+
+	if not self:_checkRateLimit(puncher) then
 		return
 	end
 
@@ -160,6 +204,7 @@ function CombatService:Start()
 
 	Players.PlayerRemoving:Connect(function(player)
 		self._lastPunch[player] = nil
+		self._requestWindow[player] = nil
 	end)
 end
 

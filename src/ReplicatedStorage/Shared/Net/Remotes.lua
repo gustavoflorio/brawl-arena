@@ -38,4 +38,8 @@ function Remotes.GetStateRemote(): RemoteEvent?
 	return getRemote(Constants.Remotes.State)
 end
 
+function Remotes.GetEventsRemote(): RemoteEvent?
+	return getRemote(Constants.Remotes.Events)
+end
+
 return Remotes

@@ -15,6 +15,10 @@ type PlayerState = {
 	state: string,
 	damagePercent: number,
 	lastPadTouch: number,
+	arenaEnterTime: number,
+	killsSinceEnter: number,
+	xpSinceEnter: number,
+	lastLevelSnapshot: number,
 }
 
 local ArenaService = {}
@@ -22,8 +26,10 @@ ArenaService._services = nil :: Services?
 ArenaService._playerStates = {} :: { [Player]: PlayerState }
 ArenaService._padConnection = nil :: RBXScriptConnection?
 ArenaService._heartbeatConnection = nil :: RBXScriptConnection?
+ArenaService._passiveDripConnection = nil :: RBXScriptConnection?
 
 local TOUCH_DEBOUNCE = 0.5
+local PASSIVE_DRIP_INTERVAL = 1.0
 
 local function resolveLobbyFolder(): Instance?
 	return Workspace:FindFirstChild("Lobby")
@@ -90,6 +96,10 @@ function ArenaService:_ensureState(player: Player): PlayerState
 		state = Constants.PlayerState.InLobby,
 		damagePercent = 0,
 		lastPadTouch = 0,
+		arenaEnterTime = 0,
+		killsSinceEnter = 0,
+		xpSinceEnter = 0,
+		lastLevelSnapshot = 1,
 	}
 	self._playerStates[player] = newState
 	return newState
@@ -115,16 +125,42 @@ function ArenaService:ResetDamage(player: Player)
 	state.damagePercent = 0
 end
 
-function ArenaService:PublishState(player: Player)
+function ArenaService:RegisterKill(player: Player, xpGained: number)
+	local state = self:_ensureState(player)
+	state.killsSinceEnter += 1
+	state.xpSinceEnter += xpGained
+end
+
+function ArenaService:PublishState(player: Player, summary: { [string]: any }?)
 	local remote = Remotes.GetStateRemote()
 	if not remote then
 		return
 	end
 	local state = self:_ensureState(player)
-	remote:FireClient(player, {
+	local services = self._services :: Services?
+	local playerData = services and services.PlayerDataService
+	local rankService = services and services.RankService
+
+	local profile = playerData and playerData:GetProfile(player)
+	local rank = if rankService and profile then rankService:GetRankBrief(player) else nil
+	local xpForNext = if playerData and profile then playerData:XPForNextLevel(player) else 0
+
+	local snapshot: { [string]: any } = {
 		state = state.state,
 		damagePercent = state.damagePercent,
-	})
+	}
+	if profile then
+		snapshot.level = profile.Level
+		snapshot.xp = profile.XP
+		snapshot.xpForNextLevel = xpForNext
+	end
+	if rank then
+		snapshot.rank = rank
+	end
+	if summary then
+		snapshot.summary = summary
+	end
+	remote:FireClient(player, snapshot)
 end
 
 function ArenaService:TeleportToArena(player: Player)
@@ -135,36 +171,127 @@ function ArenaService:TeleportToArena(player: Player)
 	end
 	root.CFrame = spawnPart.CFrame + Vector3.new(0, 3, 0)
 	root.AssemblyLinearVelocity = Vector3.zero
+
+	local character = player.Character
+	if character then
+		local now = os.clock()
+		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, now + Constants.Arena.InvincibilityDuration)
+		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
+		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
+	end
+
 	local state = self:_ensureState(player)
 	state.state = Constants.PlayerState.InArena
 	state.damagePercent = 0
+	state.arenaEnterTime = os.clock()
+	state.killsSinceEnter = 0
+	state.xpSinceEnter = 0
+
+	local services = self._services :: Services?
+	if services then
+		local profile = services.PlayerDataService and services.PlayerDataService:GetProfile(player)
+		state.lastLevelSnapshot = profile and profile.Level or 1
+		if services.AnalyticsService then
+			services.AnalyticsService:Log(Constants.Analytics.Events.EnterArena, {
+				userId = player.UserId,
+			})
+		end
+	end
+
 	self:PublishState(player)
 end
 
+function ArenaService:_resolveKillAttribution(target: Player): Player?
+	local character = target.Character
+	if not character then
+		return nil
+	end
+	local lastHitterId = character:GetAttribute(Constants.CharacterAttributes.LastHitterId)
+	local lastHitTime = character:GetAttribute(Constants.CharacterAttributes.LastHitTime)
+	if typeof(lastHitterId) ~= "number" or lastHitterId <= 0 then
+		return nil
+	end
+	if typeof(lastHitTime) ~= "number" or lastHitTime <= 0 then
+		return nil
+	end
+	if os.clock() - lastHitTime > Constants.Arena.KillAttributionWindow then
+		return nil
+	end
+	if lastHitterId == target.UserId then
+		return nil
+	end
+	local puncher = Players:GetPlayerByUserId(lastHitterId)
+	return puncher
+end
+
 function ArenaService:ReturnToLobby(player: Player, reason: string?)
+	local services = self._services :: Services?
+	local state = self:_ensureState(player)
+	local wasInArena = state.state == Constants.PlayerState.InArena
+	local arenaDuration = if state.arenaEnterTime > 0 then os.clock() - state.arenaEnterTime else 0
+
+	local killer: Player? = nil
+	if wasInArena and reason == "OutOfBounds" then
+		killer = self:_resolveKillAttribution(player)
+	end
+
+	if wasInArena and services and services.PlayerDataService and arenaDuration > 0 then
+		services.PlayerDataService:AddTimeAlive(player, arenaDuration)
+	end
+
+	if killer and services and services.KillProcessor then
+		services.KillProcessor:HandleKill(killer, player)
+	end
+
+	if services and services.KillProcessor then
+		services.KillProcessor:ResetStreak(player)
+	end
+
 	local spawnPart = getLobbySpawn()
 	local root = getCharacterRoot(player)
 	if spawnPart and root then
 		root.CFrame = spawnPart.CFrame + Vector3.new(0, 3, 0)
 		root.AssemblyLinearVelocity = Vector3.zero
 	end
-	local state = self:_ensureState(player)
-	local wasInArena = state.state == Constants.PlayerState.InArena
+
+	local character = player.Character
+	if character then
+		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
+		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
+		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, 0)
+	end
+
 	state.state = Constants.PlayerState.InLobby
 	state.damagePercent = 0
 	state.lastPadTouch = os.clock()
 
 	if wasInArena and reason == "OutOfBounds" then
-		local character = player.Character
 		if character then
-			local attr = Constants.CharacterAttributes.EliminationSeq
-			local current = character:GetAttribute(attr)
+			local current = character:GetAttribute(Constants.CharacterAttributes.EliminationSeq)
 			local nextSeq = (typeof(current) == "number" and current or 0) + 1
-			character:SetAttribute(attr, nextSeq)
+			character:SetAttribute(Constants.CharacterAttributes.EliminationSeq, nextSeq)
+		end
+		if services and services.AnalyticsService then
+			services.AnalyticsService:Log(Constants.Analytics.Events.ReturnToLobby, {
+				userId = player.UserId,
+				reason = reason,
+				kills = state.killsSinceEnter,
+				timeAlive = arenaDuration,
+				xpGained = state.xpSinceEnter,
+			})
 		end
 	end
 
-	self:PublishState(player)
+	local profile = services and services.PlayerDataService and services.PlayerDataService:GetProfile(player)
+	local summary: { [string]: any } = {
+		kills = state.killsSinceEnter,
+		timeAliveSeconds = math.floor(arenaDuration),
+		xpGained = state.xpSinceEnter,
+		leveledUp = profile and profile.Level > state.lastLevelSnapshot or false,
+		newLevel = profile and profile.Level or nil,
+	}
+
+	self:PublishState(player, summary)
 end
 
 function ArenaService:_handlePadTouch(hit: BasePart)
@@ -176,6 +303,11 @@ function ArenaService:_handlePadTouch(hit: BasePart)
 	if not player then
 		return
 	end
+	local services = self._services :: Services?
+	if services and services.PlayerDataService and not services.PlayerDataService:IsLoaded(player) then
+		return
+	end
+
 	local state = self:_ensureState(player)
 	local now = os.clock()
 	if now - state.lastPadTouch < TOUCH_DEBOUNCE then
@@ -218,18 +350,65 @@ function ArenaService:_watchOutOfBounds()
 	end)
 end
 
+function ArenaService:_startPassiveDrip()
+	if self._passiveDripConnection then
+		self._passiveDripConnection:Disconnect()
+	end
+	self._passiveDripConnection = task.spawn(function()
+		while true do
+			task.wait(PASSIVE_DRIP_INTERVAL)
+			local services = self._services :: Services?
+			if not services or not services.PlayerDataService then
+				continue
+			end
+			for player, state in pairs(self._playerStates) do
+				if state.state == Constants.PlayerState.InArena and services.PlayerDataService:IsLoaded(player) then
+					local newLevel, _, leveledUp = services.PlayerDataService:AddXP(player, Constants.XP.PassiveDripPerSecond)
+					state.xpSinceEnter += Constants.XP.PassiveDripPerSecond
+					if leveledUp then
+						local remote = Remotes.GetEventsRemote()
+						if remote then
+							remote:FireAllClients({
+								type = Constants.EventTypes.LevelUp,
+								payload = {
+									userId = player.UserId,
+									previousLevel = newLevel - 1,
+									newLevel = newLevel,
+								},
+							})
+						end
+					end
+					self:PublishState(player)
+				end
+			end
+		end
+	end) :: any
+end
+
 function ArenaService:_onPlayerAdded(player: Player)
 	self:_ensureState(player)
-	player.CharacterAdded:Connect(function()
+	player.CharacterAdded:Connect(function(character)
 		local state = self:_ensureState(player)
 		state.state = Constants.PlayerState.InLobby
 		state.damagePercent = 0
 		state.lastPadTouch = os.clock()
+		state.arenaEnterTime = 0
+		state.killsSinceEnter = 0
+		state.xpSinceEnter = 0
+
+		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
+		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
+		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, 0)
+
+		local services = self._services :: Services?
+		if services and services.KillProcessor then
+			services.KillProcessor:ResetStreak(player)
+		end
+
 		task.defer(function()
 			self:PublishState(player)
 		end)
 	end)
-	player.CharacterRemoving:Connect(function() end)
 end
 
 function ArenaService:Init(services: Services)
@@ -237,6 +416,8 @@ function ArenaService:Init(services: Services)
 end
 
 function ArenaService:Start()
+	local services = self._services :: Services?
+	local playerData = services and services.PlayerDataService
 	Players.PlayerAdded:Connect(function(player)
 		self:_onPlayerAdded(player)
 	end)
@@ -245,6 +426,16 @@ function ArenaService:Start()
 	end)
 	for _, player in ipairs(Players:GetPlayers()) do
 		self:_onPlayerAdded(player)
+		if playerData and playerData:IsLoaded(player) then
+			-- player entrou antes do loader; re-publish state
+			task.defer(function()
+				self:PublishState(player)
+			end)
+		end
+	end
+
+	if playerData then
+		playerData.OnProfileLoaded = playerData.OnProfileLoaded or function() end
 	end
 
 	self:_bindSpawnPad()
@@ -260,6 +451,7 @@ function ArenaService:Start()
 	end
 
 	self:_watchOutOfBounds()
+	self:_startPassiveDrip()
 end
 
 return ArenaService
