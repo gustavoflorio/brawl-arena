@@ -313,6 +313,41 @@ local function bindKnockbackListener(character: Model)
 	end)
 end
 
+local function preloadDiagnostic(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 3)
+	if not animator or not animator:IsA("Animator") then
+		return
+	end
+	print(string.format("[CombatFxController] === PRELOAD DIAGNOSTIC rig=%s ===", tostring(humanoid.RigType)))
+	local tests = {
+		{ name = "Punch", id = Constants.Assets.PunchAnimationId },
+		{ name = "HeavyPunch", id = Constants.Assets.HeavyPunchAnimationId },
+		{ name = "Running", id = Constants.Assets.RunAnimationId },
+		{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
+		{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
+	}
+	for _, test in ipairs(tests) do
+		local anim = Instance.new("Animation")
+		anim.AnimationId = test.id
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if ok and track then
+			task.wait(0.25)
+			print(string.format("[CombatFxController]   %s id=%s length=%.3fs", test.name, test.id, track.Length))
+			track:Destroy()
+		else
+			warn(string.format("[CombatFxController]   %s LOAD FAIL: %s", test.name, tostring(track)))
+		end
+		anim:Destroy()
+	end
+	print("[CombatFxController] === END PRELOAD DIAGNOSTIC ===")
+end
+
 local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
@@ -320,6 +355,9 @@ local function bindPlayer(player: Player, fxController: any)
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
 			fxController:ResetCharacterTracks()
+			task.spawn(function()
+				preloadDiagnostic(character)
+			end)
 		end
 	end
 	if player.Character then
