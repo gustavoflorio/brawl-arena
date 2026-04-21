@@ -15,9 +15,13 @@ local MovementController = {}
 MovementController._controllers = nil :: { [string]: any }?
 MovementController._lockConnection = nil :: RBXScriptConnection?
 MovementController._runAnimConnection = nil :: RBXScriptConnection?
+MovementController._dodgeDriveConnection = nil :: RBXScriptConnection?
 MovementController._currentState = Constants.PlayerState.InLobby
 MovementController._hasDoubleJumped = false
 MovementController._wasGrounded = true
+MovementController._dodgeUntil = 0
+MovementController._savedWalkSpeed = 16
+MovementController._savedAutoRotate = true
 
 local Z_LOCK = Constants.Arena.AxisLockValue
 local ACTION_JUMP = "BrawlArenaJump"
@@ -52,8 +56,40 @@ function MovementController:_fxController(): any?
 	return controllers and controllers.CombatFxController
 end
 
+function MovementController:IsDodging(): boolean
+	return os.clock() < self._dodgeUntil
+end
+
+local function resolveFacingVector(root: BasePart, humanoid: Humanoid?): Vector3
+	local moveDirection = humanoid and humanoid.MoveDirection or Vector3.zero
+	if moveDirection.Magnitude > 0.1 then
+		local x = moveDirection.X
+		if x > 0.1 then
+			return Vector3.new(1, 0, 0)
+		elseif x < -0.1 then
+			return Vector3.new(-1, 0, 0)
+		end
+	end
+	local look = root.CFrame.LookVector
+	if look.X > 0.1 then
+		return Vector3.new(1, 0, 0)
+	elseif look.X < -0.1 then
+		return Vector3.new(-1, 0, 0)
+	end
+	local vel = root.AssemblyLinearVelocity
+	if vel.X > 0.5 then
+		return Vector3.new(1, 0, 0)
+	elseif vel.X < -0.5 then
+		return Vector3.new(-1, 0, 0)
+	end
+	return Vector3.new(1, 0, 0)
+end
+
 function MovementController:_handleJump(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
 	if inputState ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Sink
+	end
+	if self:IsDodging() then
 		return Enum.ContextActionResult.Sink
 	end
 	local humanoid = getHumanoid()
@@ -79,17 +115,69 @@ function MovementController:_handleJump(_name: string, inputState: Enum.UserInpu
 	return Enum.ContextActionResult.Sink
 end
 
-function MovementController:_handleDodge(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
-	if inputState == Enum.UserInputState.Begin then
-		local remote = Remotes.GetRequestRemote()
-		if remote then
-			remote:FireServer(Constants.Actions.DodgeRoll)
-		end
-		local fx = self:_fxController()
-		if fx and type(fx.PlayDodgeRoll) == "function" then
-			fx:PlayDodgeRoll()
-		end
+function MovementController:_startDodgeDrive(humanoid: Humanoid, root: BasePart, facing: Vector3)
+	if self._dodgeDriveConnection then
+		self._dodgeDriveConnection:Disconnect()
 	end
+	local speed = Constants.Combat.DodgeRollDistance / Constants.Combat.DodgeRollDurationSeconds
+	self._dodgeDriveConnection = RunService.Heartbeat:Connect(function()
+		if not self:IsDodging() or not root.Parent then
+			return
+		end
+		local currentVel = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(facing.X * speed, currentVel.Y, 0)
+	end)
+end
+
+function MovementController:_endDodgeDrive(humanoid: Humanoid?)
+	if self._dodgeDriveConnection then
+		self._dodgeDriveConnection:Disconnect()
+		self._dodgeDriveConnection = nil
+	end
+	if humanoid and humanoid.Parent then
+		humanoid.WalkSpeed = self._savedWalkSpeed
+		humanoid.AutoRotate = self._savedAutoRotate
+	end
+end
+
+function MovementController:_handleDodge(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
+	if inputState ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Sink
+	end
+	if self:IsDodging() then
+		return Enum.ContextActionResult.Sink
+	end
+	local humanoid = getHumanoid()
+	local root = getRoot()
+	if not humanoid or not root then
+		return Enum.ContextActionResult.Sink
+	end
+
+	local remote = Remotes.GetRequestRemote()
+	if remote then
+		remote:FireServer(Constants.Actions.DodgeRoll)
+	end
+	local fx = self:_fxController()
+	if fx and type(fx.PlayDodgeRoll) == "function" then
+		fx:PlayDodgeRoll()
+	end
+
+	local duration = Constants.Combat.DodgeRollDurationSeconds
+	self._dodgeUntil = os.clock() + duration
+	self._savedWalkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+	self._savedAutoRotate = humanoid.AutoRotate
+	humanoid.WalkSpeed = 0
+	humanoid.AutoRotate = false
+
+	local facing = resolveFacingVector(root, humanoid)
+	self:_startDodgeDrive(humanoid, root, facing)
+
+	task.delay(duration, function()
+		if os.clock() >= self._dodgeUntil - 0.01 then
+			self:_endDodgeDrive(humanoid)
+		end
+	end)
+
 	return Enum.ContextActionResult.Sink
 end
 
@@ -167,6 +255,8 @@ function MovementController:_disableArenaControls()
 		self._runAnimConnection:Disconnect()
 		self._runAnimConnection = nil
 	end
+	self:_endDodgeDrive(getHumanoid())
+	self._dodgeUntil = 0
 	local fx = self:_fxController()
 	if fx and type(fx.StopRunning) == "function" then
 		fx:StopRunning()
@@ -207,6 +297,11 @@ function MovementController:Start()
 	player.CharacterAdded:Connect(function()
 		self._hasDoubleJumped = false
 		self._wasGrounded = true
+		self._dodgeUntil = 0
+		if self._dodgeDriveConnection then
+			self._dodgeDriveConnection:Disconnect()
+			self._dodgeDriveConnection = nil
+		end
 	end)
 end
 

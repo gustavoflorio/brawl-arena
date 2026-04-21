@@ -216,7 +216,7 @@ function CombatService:_handleDodgeRoll(player: Player)
 	if not character then
 		return
 	end
-	local invulnUntil = now + Constants.Combat.DodgeRollInvincibilitySeconds
+	local invulnUntil = now + Constants.Combat.DodgeRollDurationSeconds
 	local current = character:GetAttribute(Constants.CharacterAttributes.InvincibleUntil)
 	if typeof(current) ~= "number" then
 		current = 0
