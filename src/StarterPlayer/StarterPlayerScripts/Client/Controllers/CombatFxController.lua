@@ -61,17 +61,25 @@ function CombatFxController:_loadTrack(kind: TrackKind, assetId: string, priorit
 	local character = localPlayer.Character
 	local humanoid = getHumanoid(character)
 	if not humanoid then
+		warn(string.format("[CombatFxController] _loadTrack %s: humanoid ausente", kind))
 		return nil
 	end
 	local animator = getAnimator(humanoid)
-	local ok, track = pcall(function()
+	local ok, trackOrErr = pcall(function()
 		return animator:LoadAnimation(self:_getAnimation(kind, assetId))
 	end)
-	if not ok or not track then
+	if not ok then
+		warn(string.format("[CombatFxController] _loadTrack %s FALHOU: %s", kind, tostring(trackOrErr)))
 		return nil
 	end
+	if not trackOrErr then
+		warn(string.format("[CombatFxController] _loadTrack %s retornou nil", kind))
+		return nil
+	end
+	local track = trackOrErr :: AnimationTrack
 	track.Priority = priority
 	track.Looped = looped
+	print(string.format("[CombatFxController] _loadTrack %s OK (priority=%s, looped=%s)", kind, tostring(priority), tostring(looped)))
 	return track
 end
 
@@ -84,6 +92,7 @@ function CombatFxController:_stopTrack(kind: TrackKind)
 end
 
 function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
+	print(string.format("[CombatFxController] PlayLocalPunch isHeavy=%s", tostring(isHeavy)))
 	self:_stopTrack("Punch")
 	self:_stopTrack("HeavyPunch")
 	local kind: TrackKind = isHeavy and "HeavyPunch" or "Punch"
@@ -136,6 +145,7 @@ function CombatFxController:PlayRunning()
 	if self._runningPlaying then
 		return
 	end
+	print("[CombatFxController] PlayRunning chamado")
 	local existing = self._tracks["Running"]
 	if not existing or not existing.IsPlaying then
 		existing = self:_loadTrack("Running", Constants.Assets.RunAnimationId, Enum.AnimationPriority.Action3, true)
@@ -144,6 +154,9 @@ function CombatFxController:PlayRunning()
 	if existing then
 		existing:Play(0.1)
 		self._runningPlaying = true
+		print("[CombatFxController] Running track iniciada")
+	else
+		warn("[CombatFxController] PlayRunning falhou — track nil")
 	end
 end
 

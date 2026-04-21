@@ -201,6 +201,8 @@ function MovementController:_enableArenaControls()
 	end
 
 	if not self._runAnimConnection then
+		print("[MovementController] _enableArenaControls: bindando run animation heartbeat")
+		local lastRunningState = false
 		self._runAnimConnection = RunService.Heartbeat:Connect(function()
 			local humanoid = getHumanoid()
 			if not humanoid then
@@ -216,7 +218,13 @@ function MovementController:_enableArenaControls()
 			if not fx then
 				return
 			end
-			if humanoid.MoveDirection.Magnitude > 0.1 and grounded then
+			local moving = humanoid.MoveDirection.Magnitude > 0.1 and grounded
+			if moving ~= lastRunningState then
+				print(string.format("[MovementController] running state mudou: moving=%s grounded=%s moveDir=%.2f",
+					tostring(moving), tostring(grounded), humanoid.MoveDirection.Magnitude))
+				lastRunningState = moving
+			end
+			if moving then
 				if type(fx.PlayRunning) == "function" then
 					fx:PlayRunning()
 				end
@@ -270,6 +278,7 @@ function MovementController:_applyState(state: string)
 	if state == self._currentState then
 		return
 	end
+	print("[MovementController] state mudou de", self._currentState, "para", state)
 	self._currentState = state
 	if state == Constants.PlayerState.InArena then
 		self:_enableArenaControls()
