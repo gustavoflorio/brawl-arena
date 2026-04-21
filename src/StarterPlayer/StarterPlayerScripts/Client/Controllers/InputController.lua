@@ -15,15 +15,16 @@ function InputController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
 
-function InputController:_firePunch()
+function InputController:_firePunch(isHeavy: boolean)
 	local remote = Remotes.GetRequestRemote()
 	if remote then
-		remote:FireServer(Constants.Actions.Punch)
+		local action = isHeavy and Constants.Actions.HeavyPunch or Constants.Actions.Punch
+		remote:FireServer(action)
 	end
 	local controllers = self._controllers
 	local fxController = controllers and controllers.CombatFxController
 	if fxController and type(fxController.PlayLocalPunch) == "function" then
-		fxController:PlayLocalPunch()
+		fxController:PlayLocalPunch(isHeavy)
 	end
 end
 
@@ -41,10 +42,13 @@ function InputController:Start()
 		if processed then
 			return
 		end
+		if self._currentState ~= Constants.PlayerState.InArena then
+			return
+		end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			if self._currentState == Constants.PlayerState.InArena then
-				self:_firePunch()
-			end
+			self:_firePunch(false)
+		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+			self:_firePunch(true)
 		end
 	end)
 end

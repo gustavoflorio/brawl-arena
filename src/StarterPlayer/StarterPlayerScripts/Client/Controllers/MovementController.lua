@@ -12,12 +12,16 @@ local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes")
 local player = Players.LocalPlayer
 
 local MovementController = {}
+MovementController._controllers = nil :: { [string]: any }?
 MovementController._lockConnection = nil :: RBXScriptConnection?
+MovementController._runAnimConnection = nil :: RBXScriptConnection?
 MovementController._currentState = Constants.PlayerState.InLobby
+MovementController._hasDoubleJumped = false
+MovementController._wasGrounded = true
 
 local Z_LOCK = Constants.Arena.AxisLockValue
 local ACTION_JUMP = "BrawlArenaJump"
-local ACTION_BLOCK_BACKWARD = "BrawlArenaBlockBackward"
+local ACTION_DODGE = "BrawlArenaDodge"
 
 local function getRoot(): BasePart?
 	local character = player.Character
@@ -43,17 +47,49 @@ local function getHumanoid(): Humanoid?
 	return nil
 end
 
+function MovementController:_fxController(): any?
+	local controllers = self._controllers
+	return controllers and controllers.CombatFxController
+end
+
 function MovementController:_handleJump(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
-	if inputState == Enum.UserInputState.Begin then
-		local humanoid = getHumanoid()
-		if humanoid and humanoid.FloorMaterial ~= Enum.Material.Air then
-			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	if inputState ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Sink
+	end
+	local humanoid = getHumanoid()
+	if not humanoid then
+		return Enum.ContextActionResult.Sink
+	end
+	local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+	if grounded then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		self._hasDoubleJumped = false
+	elseif not self._hasDoubleJumped then
+		self._hasDoubleJumped = true
+		local root = getRoot()
+		if root then
+			local velocity = root.AssemblyLinearVelocity
+			root.AssemblyLinearVelocity = Vector3.new(velocity.X, Constants.Combat.DoubleJumpVelocity, 0)
+		end
+		local fx = self:_fxController()
+		if fx and type(fx.PlayDoubleJump) == "function" then
+			fx:PlayDoubleJump()
 		end
 	end
 	return Enum.ContextActionResult.Sink
 end
 
-function MovementController:_handleBlockBackward(_name: string, _state: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
+function MovementController:_handleDodge(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
+	if inputState == Enum.UserInputState.Begin then
+		local remote = Remotes.GetRequestRemote()
+		if remote then
+			remote:FireServer(Constants.Actions.DodgeRoll)
+		end
+		local fx = self:_fxController()
+		if fx and type(fx.PlayDodgeRoll) == "function" then
+			fx:PlayDodgeRoll()
+		end
+	end
 	return Enum.ContextActionResult.Sink
 end
 
@@ -76,6 +112,34 @@ function MovementController:_enableArenaControls()
 		end)
 	end
 
+	if not self._runAnimConnection then
+		self._runAnimConnection = RunService.Heartbeat:Connect(function()
+			local humanoid = getHumanoid()
+			if not humanoid then
+				return
+			end
+			local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+			if grounded and not self._wasGrounded then
+				self._hasDoubleJumped = false
+			end
+			self._wasGrounded = grounded
+
+			local fx = self:_fxController()
+			if not fx then
+				return
+			end
+			if humanoid.MoveDirection.Magnitude > 0.1 and grounded then
+				if type(fx.PlayRunning) == "function" then
+					fx:PlayRunning()
+				end
+			else
+				if type(fx.StopRunning) == "function" then
+					fx:StopRunning()
+				end
+			end
+		end)
+	end
+
 	ContextActionService:BindAction(
 		ACTION_JUMP,
 		function(name, state, input)
@@ -85,9 +149,9 @@ function MovementController:_enableArenaControls()
 		Enum.KeyCode.W
 	)
 	ContextActionService:BindAction(
-		ACTION_BLOCK_BACKWARD,
+		ACTION_DODGE,
 		function(name, state, input)
-			return self:_handleBlockBackward(name, state, input)
+			return self:_handleDodge(name, state, input)
 		end,
 		false,
 		Enum.KeyCode.S
@@ -99,8 +163,17 @@ function MovementController:_disableArenaControls()
 		self._lockConnection:Disconnect()
 		self._lockConnection = nil
 	end
+	if self._runAnimConnection then
+		self._runAnimConnection:Disconnect()
+		self._runAnimConnection = nil
+	end
+	local fx = self:_fxController()
+	if fx and type(fx.StopRunning) == "function" then
+		fx:StopRunning()
+	end
+	self._hasDoubleJumped = false
 	ContextActionService:UnbindAction(ACTION_JUMP)
-	ContextActionService:UnbindAction(ACTION_BLOCK_BACKWARD)
+	ContextActionService:UnbindAction(ACTION_DODGE)
 end
 
 function MovementController:_applyState(state: string)
@@ -115,7 +188,9 @@ function MovementController:_applyState(state: string)
 	end
 end
 
-function MovementController:Init(_controllers: { [string]: any }) end
+function MovementController:Init(controllers: { [string]: any })
+	self._controllers = controllers
+end
 
 function MovementController:Start()
 	local remote = Remotes.GetStateRemote()
@@ -129,6 +204,10 @@ function MovementController:Start()
 		end
 	end)
 
+	player.CharacterAdded:Connect(function()
+		self._hasDoubleJumped = false
+		self._wasGrounded = true
+	end)
 end
 
 return MovementController

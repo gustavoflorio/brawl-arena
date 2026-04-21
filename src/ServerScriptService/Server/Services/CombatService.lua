@@ -12,7 +12,8 @@ type Services = { [string]: any }
 
 local CombatService = {}
 CombatService._services = nil :: Services?
-CombatService._lastPunch = {} :: { [Player]: number }
+CombatService._nextPunchAllowedAt = {} :: { [Player]: number }
+CombatService._nextDodgeAllowedAt = {} :: { [Player]: number }
 CombatService._requestWindow = {} :: { [Player]: { number } }
 
 local function getCharacterRoot(player: Player): BasePart?
@@ -129,7 +130,7 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 	return results
 end
 
-function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3)
+function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, damageMultiplier: number)
 	local arenaService = (self._services :: Services).ArenaService
 	local punchRoot = getCharacterRoot(puncher)
 	local targetRoot = getCharacterRoot(target)
@@ -137,11 +138,12 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 		return
 	end
 
-	arenaService:AddDamage(target, Constants.Combat.PunchDamage)
+	local damageAmount = Constants.Combat.PunchDamage * damageMultiplier
+	arenaService:AddDamage(target, damageAmount)
 	local damage = arenaService:GetDamage(target)
 
-	local speed = Constants.Combat.KnockbackBase * (1 + (damage / 100) * Constants.Combat.KnockbackGrowth)
-	targetRoot.AssemblyLinearVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical, 0)
+	local speed = Constants.Combat.KnockbackBase * (1 + (damage / 100) * Constants.Combat.KnockbackGrowth) * damageMultiplier
+	targetRoot.AssemblyLinearVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical * damageMultiplier, 0)
 
 	local targetCharacter = target.Character
 	if targetCharacter then
@@ -157,7 +159,7 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	arenaService:PublishState(target)
 end
 
-function CombatService:_handlePunch(puncher: Player)
+function CombatService:_handlePunch(puncher: Player, isHeavy: boolean)
 	local arenaService = (self._services :: Services).ArenaService
 	if arenaService:GetState(puncher) ~= Constants.PlayerState.InArena then
 		return
@@ -168,22 +170,49 @@ function CombatService:_handlePunch(puncher: Player)
 	end
 
 	local now = os.clock()
-	local lastPunch = self._lastPunch[puncher] or 0
-	if now - lastPunch < Constants.Combat.PunchCooldown then
+	local nextAllowed = self._nextPunchAllowedAt[puncher] or 0
+	if now < nextAllowed then
 		return
 	end
-	self._lastPunch[puncher] = now
+	local cooldown = isHeavy and Constants.Combat.HeavyPunchCooldown or Constants.Combat.PunchCooldown
+	self._nextPunchAllowedAt[puncher] = now + cooldown
 
 	local root = getCharacterRoot(puncher)
 	if not root then
 		return
 	end
 
+	local multiplier = isHeavy and Constants.Combat.HeavyPunchMultiplier or 1
 	local facing = resolveFacing(root)
 	local targets = self:_findTargets(puncher, root.Position, facing)
 	for _, target in ipairs(targets) do
-		self:_applyHit(puncher, target, facing)
+		self:_applyHit(puncher, target, facing, multiplier)
 	end
+end
+
+function CombatService:_handleDodgeRoll(player: Player)
+	local arenaService = (self._services :: Services).ArenaService
+	if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
+		return
+	end
+
+	local now = os.clock()
+	local nextAllowed = self._nextDodgeAllowedAt[player] or 0
+	if now < nextAllowed then
+		return
+	end
+	self._nextDodgeAllowedAt[player] = now + Constants.Combat.DodgeRollCooldown
+
+	local character = player.Character
+	if not character then
+		return
+	end
+	local invulnUntil = now + Constants.Combat.DodgeRollInvincibilitySeconds
+	local current = character:GetAttribute(Constants.CharacterAttributes.InvincibleUntil)
+	if typeof(current) ~= "number" then
+		current = 0
+	end
+	character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, math.max(current, invulnUntil))
 end
 
 function CombatService:Init(services: Services)
@@ -198,12 +227,17 @@ function CombatService:Start()
 	end
 	requestRemote.OnServerEvent:Connect(function(player: Player, action: any)
 		if action == Constants.Actions.Punch then
-			self:_handlePunch(player)
+			self:_handlePunch(player, false)
+		elseif action == Constants.Actions.HeavyPunch then
+			self:_handlePunch(player, true)
+		elseif action == Constants.Actions.DodgeRoll then
+			self:_handleDodgeRoll(player)
 		end
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
-		self._lastPunch[player] = nil
+		self._nextPunchAllowedAt[player] = nil
+		self._nextDodgeAllowedAt[player] = nil
 		self._requestWindow[player] = nil
 	end)
 end

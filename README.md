@@ -13,15 +13,17 @@ Jogo Roblox estilo brawl 2D (side-scroller) inspirado em Smash Bros. Código-fon
 
 | Ação | Lobby | Arena |
 | --- | --- | --- |
-| Mover lateral | `A`/`D` | `A`/`D` |
+| Mover lateral | `A`/`D` | `A`/`D` (com animação de corrida) |
 | Pular | `Espaço` | `W` ou `Espaço` |
-| Frente/trás | `W`/`S` (padrão Roblox) | bloqueado (side-scroller) — `S` reservado, sem ação |
-| Socar (botão A) | — | `M1` — direção do soco = para onde o player está olhando |
-| Botão B | — | `M2` (reservado, ainda sem ação) |
+| Double jump | — | `W` de novo no ar (uma vez por salto) |
+| Dodge roll | — | `S` (invencibilidade 0.8s, cooldown 2s) |
+| Frente/trás | `W`/`S` (padrão Roblox) | bloqueado (side-scroller) |
+| Soco leve (botão A) | — | `M1` — direção = para onde o player está olhando |
+| Soco pesado (botão B) | — | `M2` — 3x o dano, cooldown 1.2s |
 | Entrar na arena | Pisar no `SpawnPad` (pad neon laranja) | — |
 | Sair da arena | — | Cair pra fora da `Platform` |
 
-> **Mobile**: o plano é ter dois botões on-screen, `A` e `B`, mapeados respectivamente para `M1` e `M2`. Por enquanto só o `M1` (soco) está implementado.
+> **Mobile**: dois botões on-screen `A` (soco leve = M1) e `B` (soco pesado = M2). Ambos server-rate-limited.
 
 **Câmera e movimento:**
 - No **lobby**, câmera e movimento são livres em 3D (padrão Roblox).

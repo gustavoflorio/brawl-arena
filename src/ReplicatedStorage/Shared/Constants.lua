@@ -9,6 +9,8 @@ local Constants = {
 	},
 	Actions = {
 		Punch = "Punch",
+		HeavyPunch = "HeavyPunch",
+		DodgeRoll = "DodgeRoll",
 	},
 	EventTypes = {
 		KillFeed = "KillFeed",
@@ -21,11 +23,16 @@ local Constants = {
 		PunchRange = 5,
 		PunchDamage = 10,
 		PunchCooldown = 0.4,
+		HeavyPunchCooldown = 1.2,
+		HeavyPunchMultiplier = 3,
+		DodgeRollCooldown = 2.0,
+		DodgeRollInvincibilitySeconds = 0.8,
+		DoubleJumpVelocity = 55,
 		KnockbackBase = 40,
 		KnockbackGrowth = 1.5,
 		KnockbackVertical = 35,
 		RateLimitWindow = 1.0,
-		RateLimitMaxRequests = 3,
+		RateLimitMaxRequests = 4,
 	},
 	Arena = {
 		YKillThreshold = -50,
@@ -99,6 +106,10 @@ local Constants = {
 	},
 	Assets = {
 		PunchAnimationId = "rbxassetid://105919524623967",
+		HeavyPunchAnimationId = "rbxassetid://106423517560689",
+		RunAnimationId = "rbxassetid://83465597129350",
+		DoubleJumpAnimationId = "rbxassetid://74399426620925",
+		DodgeRollAnimationId = "rbxassetid://115857807557239",
 		PunchHitSound = {
 			Id = "rbxassetid://139697578472716",
 			Volume = 0.7,
