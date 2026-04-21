@@ -6,6 +6,11 @@ type Services = { [string]: any }
 
 local services: Services = {}
 local loadOrder = {
+	"PlayerDataService",
+	"AnalyticsService",
+	"RankService",
+	"MonetizationService",
+	"KillProcessor",
 	"ArenaService",
 	"CombatService",
 }

@@ -5,9 +5,17 @@ local Constants = {
 		Folder = "Remotes",
 		Request = "BrawlRequest",
 		State = "BrawlState",
+		Events = "BrawlEvents",
 	},
 	Actions = {
 		Punch = "Punch",
+	},
+	EventTypes = {
+		KillFeed = "KillFeed",
+		Streak = "Streak",
+		LevelUp = "LevelUp",
+		RankUp = "RankUp",
+		XPGain = "XPGain",
 	},
 	Combat = {
 		PunchRange = 5,
@@ -16,10 +24,14 @@ local Constants = {
 		KnockbackBase = 40,
 		KnockbackGrowth = 1.5,
 		KnockbackVertical = 35,
+		RateLimitWindow = 1.0,
+		RateLimitMaxRequests = 3,
 	},
 	Arena = {
 		YKillThreshold = -50,
 		AxisLockValue = 0,
+		KillAttributionWindow = 5.0,
+		InvincibilityDuration = 1.0,
 	},
 	PlayerState = {
 		InLobby = "InLobby",
@@ -28,6 +40,62 @@ local Constants = {
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",
 		EliminationSeq = "BrawlEliminationSeq",
+		LastHitterId = "BrawlLastHitterId",
+		LastHitTime = "BrawlLastHitTime",
+		InvincibleUntil = "BrawlInvincibleUntil",
+	},
+	XP = {
+		Base = 20,
+		MMRMultiplier = 10,
+		BonusClampMin = -15,
+		BonusClampMax = 100,
+		ParticipationBonus = 5,
+		PassiveDripPerSecond = 1,
+		LevelCurveMultiplier = 100,
+		LevelCurveExponent = 1.4,
+	},
+	Rank = {
+		Tiers = {
+			{ name = "Unranked",  threshold = 0 },
+			{ name = "Bronze I",  threshold = 100 },
+			{ name = "Bronze II", threshold = 250 },
+			{ name = "Bronze III", threshold = 450 },
+			{ name = "Silver I",  threshold = 700 },
+			{ name = "Silver II", threshold = 1000 },
+			{ name = "Silver III", threshold = 1350 },
+			{ name = "Gold I",    threshold = 1750 },
+			{ name = "Gold II",   threshold = 2200 },
+			{ name = "Gold III",  threshold = 2700 },
+			{ name = "Platinum I", threshold = 3250 },
+			{ name = "Platinum II", threshold = 3850 },
+			{ name = "Platinum III", threshold = 4500 },
+			{ name = "Diamond",   threshold = 5300 },
+			{ name = "Champion",  threshold = 7000 },
+		},
+		PointsPerKill = 15,
+		PointsLostPerDeath = 5,
+	},
+	Streak = {
+		DoubleWindow = 5.0,
+		TripleWindow = 8.0,
+		DominatingThreshold = 5,
+	},
+	Donate = {
+		ProductId = 0,
+		DisplayPrice = 100,
+		ProductName = "Support the Dev",
+	},
+	Analytics = {
+		Events = {
+			SessionStart = "session_start",
+			SessionEnd = "session_end",
+			Kill = "kill",
+			LevelUp = "level_up",
+			RankUp = "rank_up",
+			Donate = "donate",
+			EnterArena = "enter_arena",
+			ReturnToLobby = "return_to_lobby",
+		},
 	},
 	Assets = {
 		PunchAnimationId = "rbxassetid://105919524623967",
@@ -41,6 +109,10 @@ local Constants = {
 			Id = "rbxassetid://76627054450785",
 			Volume = 0.85,
 		},
+	},
+	DataStore = {
+		ProfileStoreName = "BrawlArenaProfiles_v1",
+		PurchaseDataStoreName = "BrawlArenaPurchases_v1",
 	},
 }
 

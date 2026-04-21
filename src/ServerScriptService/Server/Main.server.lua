@@ -1,6 +1,11 @@
 --!strict
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Bloquear spawn de character automático. PlayerDataService controla
+-- o spawn via player:LoadCharacter() após o profile estar carregado.
+Players.CharacterAutoLoads = false
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
 
@@ -12,7 +17,12 @@ local function ensureRemotes()
 		folder.Parent = ReplicatedStorage
 	end
 
-	for _, remoteName in ipairs({ Constants.Remotes.Request, Constants.Remotes.State }) do
+	local remoteNames = {
+		Constants.Remotes.Request,
+		Constants.Remotes.State,
+		Constants.Remotes.Events,
+	}
+	for _, remoteName in ipairs(remoteNames) do
 		if not folder:FindFirstChild(remoteName) then
 			local remote = Instance.new("RemoteEvent")
 			remote.Name = remoteName
