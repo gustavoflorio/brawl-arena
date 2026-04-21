@@ -27,22 +27,16 @@ function InputController:_isBusy(): boolean
 end
 
 function InputController:_firePunch(isHeavy: boolean)
-	print(string.format("[InputController] _firePunch isHeavy=%s state=%s", tostring(isHeavy), self._currentState))
 	if self._currentState ~= Constants.PlayerState.InArena then
-		print("[InputController] bail: not in arena")
 		return
 	end
 	if self:_isBusy() then
-		print("[InputController] bail: busy (dodging)")
 		return
 	end
 	local remote = Remotes.GetRequestRemote()
 	if remote then
 		local action = isHeavy and Constants.Actions.HeavyPunch or Constants.Actions.Punch
-		print("[InputController] firing action:", action)
 		remote:FireServer(action)
-	else
-		warn("[InputController] BrawlRequest remote não encontrado ao firar punch")
 	end
 	local controllers = self._controllers
 	local fxController = controllers and controllers.CombatFxController
@@ -52,37 +46,29 @@ function InputController:_firePunch(isHeavy: boolean)
 end
 
 function InputController:Start()
-	print("[InputController] Start — conectando UserInputService.InputBegan")
-
 	local stateRemote = Remotes.GetStateRemote()
 	if stateRemote then
 		stateRemote.OnClientEvent:Connect(function(snapshot)
 			if typeof(snapshot) == "table" and typeof(snapshot.state) == "string" then
-				if snapshot.state ~= self._currentState then
-					print("[InputController] state snapshot:", snapshot.state)
-				end
 				self._currentState = snapshot.state
 			end
 		end)
-	else
-		warn("[InputController] BrawlState remote não encontrado ao conectar")
 	end
 
+	-- M2 é consumido pelo default camera rotation script (processed=true),
+	-- mas queremos firar heavy punch mesmo assim — por isso não checamos
+	-- processed pra MouseButton2. M1 respeita processed pra não firar
+	-- punch quando clicando em UI (ex: donate button).
 	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-		-- Gate apenas por estado InArena (não por processed flag).
-		-- processed=true acontece pra M2 quando camera module marca,
-		-- mas queremos firar heavy punch mesmo assim.
 		if self._currentState ~= Constants.PlayerState.InArena then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			if processed then
-				return -- M1 em UI (botão de donate por exemplo), deixa passar
+				return
 			end
-			print("[InputController] M1 detectado")
 			self:_firePunch(false)
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-			print("[InputController] M2 detectado (processed=" .. tostring(processed) .. ")")
 			self:_firePunch(true)
 		end
 	end)

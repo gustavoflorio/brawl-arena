@@ -1,5 +1,6 @@
 --!strict
 
+local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -18,6 +19,14 @@ local DODGE_ROLL_DURATION = 1.0
 local DOUBLE_JUMP_DURATION = 0.6
 
 type TrackKind = "Punch" | "HeavyPunch" | "DodgeRoll" | "DoubleJump" | "Running"
+
+local ANIM_SPECS: { { name: TrackKind, id: string } } = {
+	{ name = "Punch", id = Constants.Assets.PunchAnimationId },
+	{ name = "HeavyPunch", id = Constants.Assets.HeavyPunchAnimationId },
+	{ name = "Running", id = Constants.Assets.RunAnimationId },
+	{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
+	{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
+}
 
 local CombatFxController = {}
 CombatFxController._animCache = {} :: { [string]: Animation }
@@ -79,15 +88,6 @@ function CombatFxController:_loadTrack(kind: TrackKind, assetId: string, priorit
 	local track = trackOrErr :: AnimationTrack
 	track.Priority = priority
 	track.Looped = looped
-	print(string.format(
-		"[CombatFxController] _loadTrack %s OK — assetId=%s rig=%s length=%.3fs priority=%s looped=%s",
-		kind,
-		assetId,
-		tostring(humanoid.RigType),
-		track.Length,
-		tostring(priority),
-		tostring(looped)
-	))
 	return track
 end
 
@@ -100,7 +100,6 @@ function CombatFxController:_stopTrack(kind: TrackKind)
 end
 
 function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
-	print(string.format("[CombatFxController] PlayLocalPunch isHeavy=%s", tostring(isHeavy)))
 	self:_stopTrack("Punch")
 	self:_stopTrack("HeavyPunch")
 	local kind: TrackKind = isHeavy and "HeavyPunch" or "Punch"
@@ -112,17 +111,6 @@ function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 	end
 	self._tracks[kind] = track
 	track:Play(0.05)
-	task.delay(0.1, function()
-		if self._tracks[kind] == track then
-			print(string.format(
-				"[CombatFxController] %s status pós-play: IsPlaying=%s TimePosition=%.3f Length=%.3f",
-				kind,
-				tostring(track.IsPlaying),
-				track.TimePosition,
-				track.Length
-			))
-		end
-	end)
 	task.delay(duration, function()
 		if self._tracks[kind] == track then
 			self._tracks[kind] = nil
@@ -164,7 +152,6 @@ function CombatFxController:PlayRunning()
 	if self._runningPlaying then
 		return
 	end
-	print("[CombatFxController] PlayRunning chamado")
 	local existing = self._tracks["Running"]
 	if not existing or not existing.IsPlaying then
 		existing = self:_loadTrack("Running", Constants.Assets.RunAnimationId, Enum.AnimationPriority.Action3, true)
@@ -173,20 +160,6 @@ function CombatFxController:PlayRunning()
 	if existing then
 		existing:Play(0.1)
 		self._runningPlaying = true
-		print("[CombatFxController] Running track iniciada")
-		task.delay(0.15, function()
-			if existing and self._tracks["Running"] == existing then
-				print(string.format(
-					"[CombatFxController] Running status pós-play: IsPlaying=%s TimePosition=%.3f Speed=%.2f Length=%.3f",
-					tostring(existing.IsPlaying),
-					existing.TimePosition,
-					existing.Speed,
-					existing.Length
-				))
-			end
-		end)
-	else
-		warn("[CombatFxController] PlayRunning falhou — track nil")
 	end
 end
 
@@ -313,65 +286,6 @@ local function bindKnockbackListener(character: Model)
 	end)
 end
 
-local function preloadDiagnostic(character: Model)
-	local ContentProvider = game:GetService("ContentProvider")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
-	end
-	local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 3)
-	if not animator or not animator:IsA("Animator") then
-		return
-	end
-	print(string.format("[CombatFxController] === PRELOAD DIAGNOSTIC rig=%s ===", tostring(humanoid.RigType)))
-
-	local tests = {
-		{ name = "Punch", id = Constants.Assets.PunchAnimationId },
-		{ name = "HeavyPunch", id = Constants.Assets.HeavyPunchAnimationId },
-		{ name = "Running", id = Constants.Assets.RunAnimationId },
-		{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
-		{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
-	}
-
-	local anims = {}
-	for _, t in ipairs(tests) do
-		local anim = Instance.new("Animation")
-		anim.Name = "Diag_" .. t.name
-		anim.AnimationId = t.id
-		anim.Parent = character
-		t.anim = anim
-		table.insert(anims, anim)
-	end
-
-	print("[CombatFxController]   PreloadAsync...")
-	local preloadOk, preloadErr = pcall(function()
-		ContentProvider:PreloadAsync(anims, function(contentId, status)
-			print(string.format("[CombatFxController]     preload %s → %s", tostring(contentId), tostring(status)))
-		end)
-	end)
-	print(string.format("[CombatFxController]   PreloadAsync done (ok=%s err=%s)", tostring(preloadOk), tostring(preloadErr)))
-
-	for _, t in ipairs(tests) do
-		local ok, track = pcall(function()
-			return animator:LoadAnimation(t.anim)
-		end)
-		if ok and track then
-			-- Espera até 5s pelo track.Length popular
-			local waited = 0
-			while track.Length <= 0 and waited < 5 do
-				task.wait(0.25)
-				waited = waited + 0.25
-			end
-			print(string.format("[CombatFxController]   %-12s length=%.3fs waited=%.2fs", t.name, track.Length, waited))
-			track:Destroy()
-		else
-			warn(string.format("[CombatFxController]   %s LOAD FAIL: %s", t.name, tostring(track)))
-		end
-		t.anim:Destroy()
-	end
-	print("[CombatFxController] === END PRELOAD DIAGNOSTIC ===")
-end
-
 local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
@@ -379,9 +293,6 @@ local function bindPlayer(player: Player, fxController: any)
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
 			fxController:ResetCharacterTracks()
-			task.spawn(function()
-				preloadDiagnostic(character)
-			end)
 		end
 	end
 	if player.Character then
@@ -393,19 +304,28 @@ end
 function CombatFxController:Init(_controllers: { [string]: any }) end
 
 function CombatFxController:Start()
+	-- ContentProvider:PreloadAsync é obrigatório: sem preload,
+	-- Animator:LoadAnimation retorna tracks com length=0 silenciosamente
+	-- e nenhuma animação toca.
+	local preloadList: { Animation } = {}
+	for _, spec in ipairs(ANIM_SPECS) do
+		local anim = self:_getAnimation(spec.name, spec.id)
+		table.insert(preloadList, anim)
+	end
+	task.spawn(function()
+		local ok, err = pcall(function()
+			ContentProvider:PreloadAsync(preloadList)
+		end)
+		if not ok then
+			warn("[CombatFxController] PreloadAsync falhou:", err)
+		end
+	end)
+
 	for _, player in ipairs(Players:GetPlayers()) do
 		bindPlayer(player, self)
 	end
 	Players.PlayerAdded:Connect(function(player)
 		bindPlayer(player, self)
-	end)
-
-	pcall(function()
-		self:_getAnimation("Punch", Constants.Assets.PunchAnimationId)
-		self:_getAnimation("HeavyPunch", Constants.Assets.HeavyPunchAnimationId)
-		self:_getAnimation("Running", Constants.Assets.RunAnimationId)
-		self:_getAnimation("DoubleJump", Constants.Assets.DoubleJumpAnimationId)
-		self:_getAnimation("DodgeRoll", Constants.Assets.DodgeRollAnimationId)
 	end)
 end
 
