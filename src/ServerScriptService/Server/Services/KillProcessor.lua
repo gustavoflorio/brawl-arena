@@ -173,6 +173,11 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 			newRank = puncherRankDelta.newName,
 		})
 	end
+
+	local rankingService = services.RankingService
+	if rankingService then
+		rankingService:SubmitForPlayer(puncher)
+	end
 end
 
 return KillProcessor

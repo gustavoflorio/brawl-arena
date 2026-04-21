@@ -237,6 +237,9 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 
 	if wasInArena and services and services.PlayerDataService and arenaDuration > 0 then
 		services.PlayerDataService:AddTimeAlive(player, arenaDuration)
+		if services.RankingService then
+			services.RankingService:SubmitForPlayer(player)
+		end
 	end
 
 	if killer and services and services.KillProcessor then

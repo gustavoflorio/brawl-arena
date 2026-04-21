@@ -113,6 +113,22 @@ local Constants = {
 	DataStore = {
 		ProfileStoreName = "BrawlArenaProfiles_v1",
 		PurchaseDataStoreName = "BrawlArenaPurchases_v1",
+		RankingStorePrefix = "BrawlArenaRanking_v1_",
+	},
+	Ranking = {
+		Modes = {
+			Level = "Level",
+			Kills = "Kills",
+			TimeAlive = "TimeAlive",
+		},
+		ModeDisplay = {
+			Level = { title = "TOP LEVEL", scoreSuffix = "", accent = Color3.fromRGB(80, 180, 255) },
+			Kills = { title = "TOP KILLS", scoreSuffix = " kills", accent = Color3.fromRGB(255, 100, 100) },
+			TimeAlive = { title = "TOP TEMPO VIVO", scoreSuffix = "", accent = Color3.fromRGB(120, 220, 120) },
+		},
+		TopN = 10,
+		RefreshIntervalSeconds = 60,
+		MinScoreToSubmit = 1,
 	},
 }
 

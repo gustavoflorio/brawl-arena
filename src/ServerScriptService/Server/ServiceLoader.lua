@@ -9,6 +9,7 @@ local loadOrder = {
 	"PlayerDataService",
 	"AnalyticsService",
 	"RankService",
+	"RankingService",
 	"MonetizationService",
 	"KillProcessor",
 	"ArenaService",
