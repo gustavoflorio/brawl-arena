@@ -138,7 +138,7 @@ function CombatFxController:PlayRunning()
 	end
 	local existing = self._tracks["Running"]
 	if not existing or not existing.IsPlaying then
-		existing = self:_loadTrack("Running", Constants.Assets.RunAnimationId, Enum.AnimationPriority.Action2, true)
+		existing = self:_loadTrack("Running", Constants.Assets.RunAnimationId, Enum.AnimationPriority.Action3, true)
 		self._tracks["Running"] = existing
 	end
 	if existing then

@@ -119,7 +119,7 @@ function MovementController:_startDodgeDrive(humanoid: Humanoid, root: BasePart,
 	if self._dodgeDriveConnection then
 		self._dodgeDriveConnection:Disconnect()
 	end
-	local speed = Constants.Combat.DodgeRollDistance / Constants.Combat.DodgeRollDurationSeconds
+	local speed = self._savedWalkSpeed
 	self._dodgeDriveConnection = RunService.Heartbeat:Connect(function()
 		if not self:IsDodging() or not root.Parent then
 			return

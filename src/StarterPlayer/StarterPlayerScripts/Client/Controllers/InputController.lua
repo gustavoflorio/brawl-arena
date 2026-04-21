@@ -63,20 +63,22 @@ function InputController:_handleHeavyPunch(_name: string, inputState: Enum.UserI
 end
 
 function InputController:Start()
-	ContextActionService:BindAction(
+	ContextActionService:BindActionAtPriority(
 		ACTION_LIGHT_PUNCH,
 		function(name, state, input)
 			return self:_handleLightPunch(name, state, input)
 		end,
 		false,
+		1000,
 		Enum.UserInputType.MouseButton1
 	)
-	ContextActionService:BindAction(
+	ContextActionService:BindActionAtPriority(
 		ACTION_HEAVY_PUNCH,
 		function(name, state, input)
 			return self:_handleHeavyPunch(name, state, input)
 		end,
 		false,
+		1000,
 		Enum.UserInputType.MouseButton2
 	)
 

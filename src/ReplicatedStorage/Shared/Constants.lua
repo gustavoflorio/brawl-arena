@@ -27,7 +27,6 @@ local Constants = {
 		HeavyPunchMultiplier = 3,
 		DodgeRollCooldown = 2.0,
 		DodgeRollDurationSeconds = 1.0,
-		DodgeRollDistance = 3,
 		DoubleJumpVelocity = 55,
 		KnockbackBase = 40,
 		KnockbackGrowth = 1.5,
