@@ -20,6 +20,7 @@ MovementController._currentState = Constants.PlayerState.InLobby
 MovementController._hasDoubleJumped = false
 MovementController._wasGrounded = true
 MovementController._dodgeUntil = 0
+MovementController._dodgeCooldownUntil = 0
 MovementController._savedWalkSpeed = 16
 MovementController._savedAutoRotate = true
 MovementController._punchLockUntil = 0
@@ -61,6 +62,18 @@ end
 
 function MovementController:IsDodging(): boolean
 	return os.clock() < self._dodgeUntil
+end
+
+function MovementController:GetDodgeCooldownRemaining(): number
+	local remaining = self._dodgeCooldownUntil - os.clock()
+	if remaining < 0 then
+		return 0
+	end
+	return remaining
+end
+
+function MovementController:IsDodgeReady(): boolean
+	return os.clock() >= self._dodgeCooldownUntil
 end
 
 function MovementController:IsPunchLocked(): boolean
@@ -180,7 +193,7 @@ function MovementController:_handleDodge(_name: string, inputState: Enum.UserInp
 	if inputState ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Sink
 	end
-	if self:IsDodging() then
+	if self:IsDodging() or not self:IsDodgeReady() then
 		return Enum.ContextActionResult.Sink
 	end
 	local humanoid = getHumanoid()
@@ -188,6 +201,8 @@ function MovementController:_handleDodge(_name: string, inputState: Enum.UserInp
 	if not humanoid or not root then
 		return Enum.ContextActionResult.Sink
 	end
+
+	self._dodgeCooldownUntil = os.clock() + Constants.Combat.DodgeRollCooldown
 
 	local remote = Remotes.GetRequestRemote()
 	if remote then
