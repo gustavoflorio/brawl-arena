@@ -84,6 +84,7 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	local playerData = services.PlayerDataService
 	local rankService = services.RankService
 	local analytics = services.AnalyticsService
+	local arenaService = services.ArenaService
 
 	if not playerData:IsLoaded(puncher) or not playerData:IsLoaded(target) then
 		return
@@ -177,6 +178,14 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	local rankingService = services.RankingService
 	if rankingService then
 		rankingService:SubmitForPlayer(puncher)
+	end
+
+	-- Puncher ganhou XP/rank — republica o state pra HUD refletir imediatamente.
+	-- Sem isso, o HUD do puncher só atualizaria no próximo trigger de
+	-- PublishState (dano, ReturnToLobby, etc.), fazendo parecer que XP
+	-- parou de somar.
+	if arenaService then
+		arenaService:PublishState(puncher)
 	end
 end
 
