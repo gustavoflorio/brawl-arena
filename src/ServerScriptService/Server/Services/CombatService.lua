@@ -102,13 +102,18 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 		overlapParams.FilterDescendantsInstances = { puncherCharacter }
 	end
 
-	-- Hitbox em caixa orientada à frente do puncher. Cobre todo o espaço
-	-- retangular pra frente até PunchRange studs, PunchBoxHeight vertical,
-	-- PunchBoxDepth no eixo Z. Evita falsos negativos de chars colados
-	-- lateralmente que a esfera original + filtro dot podia rejeitar.
+	-- Hitbox em caixa que cobre de PunchBoxBackOffset atrás do puncher
+	-- até PunchRange à frente. Cobrir "atrás" pega targets clipados dentro
+	-- do próprio puncher ou ligeiramente passados da hitbox original.
+	-- totalLength = range (frente) + back (atrás) = comprimento da caixa.
 	local range = Constants.Combat.PunchRange
-	local boxSize = Vector3.new(range, Constants.Combat.PunchBoxHeight, Constants.Combat.PunchBoxDepth)
-	local boxCenter = origin + Vector3.new(facing.X * range / 2, 0, 0)
+	local back = Constants.Combat.PunchBoxBackOffset
+	local totalLength = range + back
+	local boxSize = Vector3.new(totalLength, Constants.Combat.PunchBoxHeight, Constants.Combat.PunchBoxDepth)
+	-- Center offset: metade do total, movido pra frente pela diferença.
+	-- Com range=5, back=2: center em origin + facing * 1.5, box vai de -2 a +5 em facing.
+	local centerOffset = (range - back) / 2
+	local boxCenter = origin + Vector3.new(facing.X * centerOffset, 0, 0)
 	local boxCFrame = CFrame.new(boxCenter)
 	local parts = Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams)
 
@@ -145,8 +150,11 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	arenaService:AddDamage(target, damageAmount)
 	local damage = arenaService:GetDamage(target)
 
-	local speed = Constants.Combat.KnockbackBase * (1 + (damage / 100) * Constants.Combat.KnockbackGrowth) * damageMultiplier
-	local kbVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical * damageMultiplier, 0)
+	-- Knockback depende SOMENTE da % acumulada do target, nunca do multiplier
+	-- do hit. Heavy punch stacka 3x mais % (acelera o knockout eventual),
+	-- mas o empurrão em si segue a fórmula padrão.
+	local speed = Constants.Combat.KnockbackBase * (1 + (damage / 100) * Constants.Combat.KnockbackGrowth)
+	local kbVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical, 0)
 
 	local targetCharacter = target.Character
 	if targetCharacter then

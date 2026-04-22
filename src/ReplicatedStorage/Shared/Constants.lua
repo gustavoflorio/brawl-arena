@@ -21,6 +21,7 @@ local Constants = {
 	},
 	Combat = {
 		PunchRange = 5,
+		PunchBoxBackOffset = 2,
 		PunchBoxHeight = 6,
 		PunchBoxDepth = 2.5,
 		PunchDamage = 10,
