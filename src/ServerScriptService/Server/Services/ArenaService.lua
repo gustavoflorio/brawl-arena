@@ -26,8 +26,14 @@ ArenaService._services = nil :: Services?
 ArenaService._playerStates = {} :: { [Player]: PlayerState }
 ArenaService._padConnection = nil :: RBXScriptConnection?
 ArenaService._heartbeatConnection = nil :: RBXScriptConnection?
+ArenaService._broadcastConnection = nil :: RBXScriptConnection?
+ArenaService._broadcastAccumulator = 0
+ArenaService._heartbeatAccumulator = 0
+ArenaService._lastBroadcastDamage = {} :: { [Player]: number }
 
 local TOUCH_DEBOUNCE = 0.5
+local BROADCAST_INTERVAL = 0.1 -- 10 Hz, fire on ≥1% damage change
+local HEARTBEAT_INTERVAL = 0.5 -- heartbeat sync for late joiners
 
 local function resolveLobbyFolder(): Instance?
 	return Workspace:FindFirstChild("Lobby")
@@ -210,6 +216,8 @@ function ArenaService:TeleportToArena(player: Player)
 	end
 
 	self:PublishState(player)
+	-- Immediate arena broadcast so new entrant sees populated panel on frame 1
+	self:_broadcastArenaState(true)
 end
 
 function ArenaService:_resolveKillAttribution(target: Player): Player?
@@ -308,6 +316,8 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 	}
 
 	self:PublishState(player, summary)
+	-- Force arena broadcast so remaining players see the elimination immediately (trigger KO shatter)
+	self:_broadcastArenaState(true)
 end
 
 function ArenaService:_handlePadTouch(hit: BasePart)
@@ -347,6 +357,89 @@ function ArenaService:_bindSpawnPad()
 	end
 	self._padConnection = pad.Touched:Connect(function(hit)
 		self:_handlePadTouch(hit)
+	end)
+end
+
+function ArenaService:_collectArenaSnapshot(): { [string]: any }
+	local services = self._services :: Services?
+	local playerData = services and services.PlayerDataService
+	local rankService = services and services.RankService
+	local players = {}
+	for player, state in pairs(self._playerStates) do
+		if state.state == Constants.PlayerState.InArena and player.Parent then
+			local profile = playerData and playerData:GetProfile(player)
+			local rank = if rankService and profile then rankService:GetRankBrief(player) else nil
+			if not rank then
+				rank = { name = "Unranked", tier = 1 }
+			end
+			table.insert(players, {
+				userId = player.UserId,
+				displayName = player.DisplayName,
+				damagePercent = state.damagePercent,
+				level = profile and profile.Level or 1,
+				rank = rank,
+			})
+		end
+	end
+	return { players = players }
+end
+
+function ArenaService:_hasSignificantDamageChange(): boolean
+	for player, state in pairs(self._playerStates) do
+		if state.state == Constants.PlayerState.InArena then
+			local last = self._lastBroadcastDamage[player] or -1
+			if math.abs(state.damagePercent - last) >= 1 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function ArenaService:_broadcastArenaState(force: boolean?)
+	local remote = Remotes.GetArenaRemote()
+	if not remote then
+		return
+	end
+	if not force and not self:_hasSignificantDamageChange() then
+		return
+	end
+	local snapshot = self:_collectArenaSnapshot()
+	-- Track last broadcast damage per player
+	for player, state in pairs(self._playerStates) do
+		if state.state == Constants.PlayerState.InArena then
+			self._lastBroadcastDamage[player] = state.damagePercent
+		end
+	end
+	-- Fire only to players currently in arena
+	for player, state in pairs(self._playerStates) do
+		if state.state == Constants.PlayerState.InArena and player.Parent then
+			remote:FireClient(player, snapshot)
+		end
+	end
+end
+
+function ArenaService:_startBroadcastLoop()
+	if self._broadcastConnection then
+		self._broadcastConnection:Disconnect()
+	end
+	self._broadcastAccumulator = 0
+	self._heartbeatAccumulator = 0
+	self._broadcastConnection = RunService.Heartbeat:Connect(function(dt)
+		self._broadcastAccumulator += dt
+		self._heartbeatAccumulator += dt
+		local didBroadcast = false
+		if self._broadcastAccumulator >= BROADCAST_INTERVAL then
+			self._broadcastAccumulator = 0
+			self:_broadcastArenaState(false)
+			didBroadcast = true
+		end
+		if self._heartbeatAccumulator >= HEARTBEAT_INTERVAL then
+			self._heartbeatAccumulator = 0
+			if not didBroadcast then
+				self:_broadcastArenaState(true)
+			end
+		end
 	end)
 end
 
@@ -428,6 +521,7 @@ function ArenaService:Start()
 	end)
 	Players.PlayerRemoving:Connect(function(player)
 		self._playerStates[player] = nil
+		self._lastBroadcastDamage[player] = nil
 	end)
 	for _, player in ipairs(Players:GetPlayers()) do
 		self:_onPlayerAdded(player)
@@ -456,6 +550,7 @@ function ArenaService:Start()
 	end
 
 	self:_watchOutOfBounds()
+	self:_startBroadcastLoop()
 end
 
 return ArenaService

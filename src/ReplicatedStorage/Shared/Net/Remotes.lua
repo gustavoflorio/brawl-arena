@@ -42,4 +42,8 @@ function Remotes.GetEventsRemote(): RemoteEvent?
 	return getRemote(Constants.Remotes.Events)
 end
 
+function Remotes.GetArenaRemote(): RemoteEvent?
+	return getRemote(Constants.Remotes.Arena)
+end
+
 return Remotes

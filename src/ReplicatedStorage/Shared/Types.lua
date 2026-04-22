@@ -73,6 +73,18 @@ export type BrawlStateSnapshot = {
 	summary: SessionSummary?,
 }
 
+export type ArenaPlayerSnapshot = {
+	userId: number,
+	displayName: string,
+	damagePercent: number,
+	level: number,
+	rank: RankBrief,
+}
+
+export type ArenaStateSnapshot = {
+	players: { ArenaPlayerSnapshot },
+}
+
 export type SessionSummary = {
 	kills: number,
 	timeAliveSeconds: number,

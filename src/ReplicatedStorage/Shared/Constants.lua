@@ -6,6 +6,7 @@ local Constants = {
 		Request = "BrawlRequest",
 		State = "BrawlState",
 		Events = "BrawlEvents",
+		Arena = "BrawlArenaState",
 	},
 	Actions = {
 		Punch = "Punch",

@@ -21,6 +21,14 @@ rojo build default.project.json -o build.rbxlx
 - Atributos no Character (`BrawlHitSeq`, `BrawlEliminationSeq`) propagam FX cliente-a-cliente.
 - Lobby e Arena coexistem no mesmo place, em regiões diferentes do Workspace.
 
+## Design System
+
+Sempre ler `DESIGN.md` antes de qualquer decisão visual ou de UI — cores, fontes, spacing, motion, layout. Todos os tokens estão definidos lá com valores `Color3.fromRGB` e `Enum.Font` (nativos Roblox, sem CSS/web fonts).
+
+- **Regra crítica:** zero motion de tela/câmera em hits. Motion só permitida contida em widgets individuais.
+- Não desviar sem aprovação explícita.
+- Em code review / QA, flagar código que não bata com `DESIGN.md`.
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
