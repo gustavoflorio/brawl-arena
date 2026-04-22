@@ -109,6 +109,22 @@ local function logPlayingTracks(animator: Animator, context: string)
 	end
 end
 
+local function stopDefaultTracks(animator: Animator, keepTrack: AnimationTrack?)
+	-- Stop anims default (Core/Movement/Idle priorities) pra que minha custom
+	-- (Action3/Action4) não sofra blend competing.
+	for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+		if t ~= keepTrack then
+			local p = t.Priority
+			if p == Enum.AnimationPriority.Core
+				or p == Enum.AnimationPriority.Idle
+				or p == Enum.AnimationPriority.Movement
+			then
+				t:Stop(0.1)
+			end
+		end
+	end
+end
+
 function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 	self:_stopTrack("Punch")
 	self:_stopTrack("HeavyPunch")
@@ -119,15 +135,17 @@ function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 	if not track then
 		return
 	end
-	self._tracks[kind] = track
-	track:Play(0.05)
-	-- diagnostic: log todas tracks no Animator após Play
 	local character = localPlayer.Character
 	local humanoid = getHumanoid(character)
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if animator then
-		task.delay(0.1, function()
-			logPlayingTracks(animator :: Animator, "punch-" .. kind)
+		stopDefaultTracks(animator :: Animator, track)
+	end
+	self._tracks[kind] = track
+	track:Play(0.05)
+	if animator then
+		task.delay(0.15, function()
+			logPlayingTracks(animator :: Animator, "punch-" .. kind .. "-after-stop")
 		end)
 	end
 	task.delay(duration, function()
@@ -177,15 +195,17 @@ function CombatFxController:PlayRunning()
 		self._tracks["Running"] = existing
 	end
 	if existing then
-		existing:Play(0.1)
-		self._runningPlaying = true
-		-- diagnostic: log tracks após play
 		local character = localPlayer.Character
 		local humanoid = getHumanoid(character)
 		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 		if animator then
+			stopDefaultTracks(animator :: Animator, existing)
+		end
+		existing:Play(0.1)
+		self._runningPlaying = true
+		if animator then
 			task.delay(0.2, function()
-				logPlayingTracks(animator :: Animator, "running-start")
+				logPlayingTracks(animator :: Animator, "running-start-after-stop")
 			end)
 		end
 	end
