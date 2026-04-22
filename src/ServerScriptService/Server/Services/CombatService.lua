@@ -94,6 +94,7 @@ end
 function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Vector3, range: number): { Player }
 	local arenaService = (self._services :: Services).ArenaService
 	local results: { Player } = {}
+	local seen: { [Player]: boolean } = {}
 
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -102,35 +103,50 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 		overlapParams.FilterDescendantsInstances = { puncherCharacter }
 	end
 
+	local function collect(parts: { BasePart })
+		for _, part in ipairs(parts) do
+			local character = part:FindFirstAncestorOfClass("Model")
+			if character then
+				local targetPlayer = Players:GetPlayerFromCharacter(character)
+				if
+					targetPlayer
+					and targetPlayer ~= puncher
+					and not seen[targetPlayer]
+					and arenaService:GetState(targetPlayer) == Constants.PlayerState.InArena
+					and isAlive(targetPlayer)
+					and not isInvincible(targetPlayer)
+				then
+					seen[targetPlayer] = true
+					table.insert(results, targetPlayer)
+				end
+			end
+		end
+	end
+
+	-- Close-range sphere overlap pega qualquer target em torno do puncher
+	-- independente de facing. Fix pra hit miss em chars colados: physics
+	-- collision pode empurrar target pra trás do puncher ou ambíguar o
+	-- facing durante overlap, e aí box direcional missa. Sphere garante
+	-- que em close range qualquer oponente grudado conecta.
+	local closeParts = Workspace:GetPartBoundsInRadius(
+		origin,
+		Constants.Combat.PunchCloseRadius,
+		overlapParams
+	)
+	collect(closeParts)
+
 	-- Hitbox em caixa que cobre de PunchBoxBackOffset atrás do puncher
-	-- até `range` à frente. Cobrir "atrás" pega targets clipados dentro
-	-- do próprio puncher ou ligeiramente passados da hitbox original.
+	-- até `range` à frente. Dedup via `seen` evita target ser adicionado
+	-- duas vezes se já entrou pelo sphere.
 	local back = Constants.Combat.PunchBoxBackOffset
 	local totalLength = range + back
 	local boxSize = Vector3.new(totalLength, Constants.Combat.PunchBoxHeight, Constants.Combat.PunchBoxDepth)
 	local centerOffset = (range - back) / 2
 	local boxCenter = origin + Vector3.new(facing.X * centerOffset, 0, 0)
 	local boxCFrame = CFrame.new(boxCenter)
-	local parts = Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams)
+	local boxParts = Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams)
+	collect(boxParts)
 
-	local seen: { [Player]: boolean } = {}
-	for _, part in ipairs(parts) do
-		local character = part:FindFirstAncestorOfClass("Model")
-		if character then
-			local targetPlayer = Players:GetPlayerFromCharacter(character)
-			if
-				targetPlayer
-				and targetPlayer ~= puncher
-				and not seen[targetPlayer]
-				and arenaService:GetState(targetPlayer) == Constants.PlayerState.InArena
-				and isAlive(targetPlayer)
-				and not isInvincible(targetPlayer)
-			then
-				seen[targetPlayer] = true
-				table.insert(results, targetPlayer)
-			end
-		end
-	end
 	return results
 end
 

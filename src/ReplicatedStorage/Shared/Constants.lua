@@ -25,6 +25,7 @@ local Constants = {
 		PunchBoxBackOffset = 2,
 		PunchBoxHeight = 6,
 		PunchBoxDepth = 2.5,
+		PunchCloseRadius = 3.5,
 		PunchDamage = 10,
 		PunchCooldown = 0.4,
 		PunchStartupLockSeconds = 0.15,
