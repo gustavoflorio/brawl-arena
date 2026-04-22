@@ -91,7 +91,7 @@ function CombatService:_checkRateLimit(player: Player): boolean
 	return true
 end
 
-function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Vector3): { Player }
+function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Vector3, range: number): { Player }
 	local arenaService = (self._services :: Services).ArenaService
 	local results: { Player } = {}
 
@@ -103,15 +103,11 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 	end
 
 	-- Hitbox em caixa que cobre de PunchBoxBackOffset atrás do puncher
-	-- até PunchRange à frente. Cobrir "atrás" pega targets clipados dentro
+	-- até `range` à frente. Cobrir "atrás" pega targets clipados dentro
 	-- do próprio puncher ou ligeiramente passados da hitbox original.
-	-- totalLength = range (frente) + back (atrás) = comprimento da caixa.
-	local range = Constants.Combat.PunchRange
 	local back = Constants.Combat.PunchBoxBackOffset
 	local totalLength = range + back
 	local boxSize = Vector3.new(totalLength, Constants.Combat.PunchBoxHeight, Constants.Combat.PunchBoxDepth)
-	-- Center offset: metade do total, movido pra frente pela diferença.
-	-- Com range=5, back=2: center em origin + facing * 1.5, box vai de -2 a +5 em facing.
 	local centerOffset = (range - back) / 2
 	local boxCenter = origin + Vector3.new(facing.X * centerOffset, 0, 0)
 	local boxCFrame = CFrame.new(boxCenter)
@@ -197,17 +193,27 @@ function CombatService:_handlePunch(puncher: Player, isHeavy: boolean)
 	local cooldown = isHeavy and Constants.Combat.HeavyPunchCooldown or Constants.Combat.PunchCooldown
 	self._nextPunchAllowedAt[puncher] = now + cooldown
 
-	local root = getCharacterRoot(puncher)
-	if not root then
-		return
-	end
-
 	local multiplier = isHeavy and Constants.Combat.HeavyPunchMultiplier or 1
-	local facing = resolveFacing(root)
-	local targets = self:_findTargets(puncher, root.Position, facing)
-	for _, target in ipairs(targets) do
-		self:_applyHit(puncher, target, facing, multiplier)
-	end
+	local range = isHeavy and Constants.Combat.HeavyPunchRange or Constants.Combat.PunchRange
+	local hitDelay = isHeavy and Constants.Combat.HeavyPunchHitDelaySeconds or Constants.Combat.PunchHitDelaySeconds
+
+	-- Hit é aplicado no final da animação. Facing e posição são resolvidos
+	-- no momento do impacto, não no início — char pode ter virado durante
+	-- o cast (após startup lock terminar).
+	task.delay(hitDelay, function()
+		if arenaService:GetState(puncher) ~= Constants.PlayerState.InArena then
+			return
+		end
+		local root = getCharacterRoot(puncher)
+		if not root then
+			return
+		end
+		local facing = resolveFacing(root)
+		local targets = self:_findTargets(puncher, root.Position, facing, range)
+		for _, target in ipairs(targets) do
+			self:_applyHit(puncher, target, facing, multiplier)
+		end
+	end)
 end
 
 local function setDescendantCollisionGroup(character: Model, groupName: string)
