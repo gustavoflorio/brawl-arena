@@ -147,6 +147,7 @@ function CombatFxController:PlayDodgeRoll()
 	end
 	self._tracks["DodgeRoll"] = track
 	track:Play(0.05)
+	track:AdjustSpeed(Constants.Combat.DodgeRollAnimSpeedMultiplier)
 	task.delay(Constants.Combat.DodgeRollDurationSeconds, function()
 		if self._tracks["DodgeRoll"] == track then
 			self._tracks["DodgeRoll"] = nil
