@@ -63,6 +63,7 @@ local Constants = {
 	Tags = {
 		JumpThroughPlatform = "BrawlJumpThrough",
 		DonateKiosk = "BrawlDonateKiosk",
+		FadingLabel = "BrawlFadingLabel",
 	},
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",
@@ -116,9 +117,9 @@ local Constants = {
 		DisplayPrice = 100,
 		ProductName = "Support the Dev",
 	},
-	DonateKiosk = {
-		FadeNearDistance = 20,
-		FadeFarDistance = 80,
+	FadingLabel = {
+		NearDistance = 20,
+		FarDistance = 80,
 	},
 	Analytics = {
 		Events = {
