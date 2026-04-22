@@ -21,10 +21,14 @@ local Constants = {
 	},
 	Combat = {
 		PunchRange = 5,
+		PunchBoxHeight = 6,
+		PunchBoxDepth = 2.5,
 		PunchDamage = 10,
 		PunchCooldown = 0.4,
+		PunchStartupLockSeconds = 0.15,
 		HeavyPunchCooldown = 1.2,
 		HeavyPunchMultiplier = 3,
+		HeavyPunchStartupLockSeconds = 0.4,
 		DodgeRollCooldown = 2.0,
 		DodgeRollDurationSeconds = 0.5,
 		DodgeRollVelocityMultiplier = 1.5,
@@ -50,6 +54,10 @@ local Constants = {
 		WalkSpeed = 32,
 		JumpHeight = 14.4,
 		JumpPower = 100,
+	},
+	CollisionGroups = {
+		Players = "BrawlPlayers",
+		PlayersDodging = "BrawlPlayersDodging",
 	},
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",

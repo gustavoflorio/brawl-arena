@@ -369,6 +369,14 @@ end
 -- Passive XP drip removido: XP agora vem apenas de kills (via KillProcessor).
 -- TotalTimeAlive continua sendo rastreado em ReturnToLobby pra alimentar o leaderboard.
 
+local function setCharacterCollisionGroup(character: Model, groupName: string)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = groupName
+		end
+	end
+end
+
 function ArenaService:_onPlayerAdded(player: Player)
 	self:_ensureState(player)
 	player.CharacterAdded:Connect(function(character)
@@ -383,6 +391,19 @@ function ArenaService:_onPlayerAdded(player: Player)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
 		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, 0)
+
+		-- Marca todos os BaseParts do character no grupo de colisão "Players"
+		-- (default). Dodge vai trocar temporariamente pra "PlayersDodging".
+		setCharacterCollisionGroup(character, Constants.CollisionGroups.Players)
+		character.DescendantAdded:Connect(function(descendant)
+			if descendant:IsA("BasePart") then
+				-- Novo part (ex: accessory): respeita o grupo atual.
+				local isDodging = (descendant.CollisionGroup == Constants.CollisionGroups.PlayersDodging)
+				if not isDodging then
+					descendant.CollisionGroup = Constants.CollisionGroups.Players
+				end
+			end
+		end)
 
 		local services = self._services :: Services?
 		if services and services.KillProcessor then

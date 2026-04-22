@@ -46,6 +46,12 @@ function InputController:_firePunch(isHeavy: boolean)
 	if fxController and type(fxController.PlayLocalPunch) == "function" then
 		fxController:PlayLocalPunch(isHeavy)
 	end
+	local movementController = controllers and controllers.MovementController
+	if movementController and type(movementController.StartPunchLock) == "function" then
+		local lockDuration = isHeavy and Constants.Combat.HeavyPunchStartupLockSeconds
+			or Constants.Combat.PunchStartupLockSeconds
+		movementController:StartPunchLock(lockDuration)
+	end
 end
 
 function InputController:Start()

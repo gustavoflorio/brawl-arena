@@ -1,5 +1,6 @@
 --!strict
 
+local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -14,6 +15,22 @@ local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild(
 StarterPlayer.CharacterWalkSpeed = Constants.PlayerMovement.WalkSpeed
 StarterPlayer.CharacterJumpHeight = Constants.PlayerMovement.JumpHeight
 StarterPlayer.CharacterJumpPower = Constants.PlayerMovement.JumpPower
+
+-- Collision groups: durante dodge, character fica no grupo "Dodging" que
+-- não colide com "Players", permitindo atravessar outros players.
+local GROUP_PLAYERS = Constants.CollisionGroups.Players
+local GROUP_DODGING = Constants.CollisionGroups.PlayersDodging
+pcall(function()
+	PhysicsService:RegisterCollisionGroup(GROUP_PLAYERS)
+end)
+pcall(function()
+	PhysicsService:RegisterCollisionGroup(GROUP_DODGING)
+end)
+pcall(function()
+	PhysicsService:CollisionGroupSetCollidable(GROUP_DODGING, GROUP_PLAYERS, false)
+	PhysicsService:CollisionGroupSetCollidable(GROUP_DODGING, GROUP_DODGING, false)
+	PhysicsService:CollisionGroupSetCollidable(GROUP_PLAYERS, GROUP_PLAYERS, true)
+end)
 
 local function ensureRemotes()
 	local folder = ReplicatedStorage:FindFirstChild(Constants.Remotes.Folder)

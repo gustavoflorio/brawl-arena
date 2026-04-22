@@ -102,7 +102,16 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 		overlapParams.FilterDescendantsInstances = { puncherCharacter }
 	end
 
-	local parts = Workspace:GetPartBoundsInRadius(origin, Constants.Combat.PunchRange, overlapParams)
+	-- Hitbox em caixa orientada à frente do puncher. Cobre todo o espaço
+	-- retangular pra frente até PunchRange studs, PunchBoxHeight vertical,
+	-- PunchBoxDepth no eixo Z. Evita falsos negativos de chars colados
+	-- lateralmente que a esfera original + filtro dot podia rejeitar.
+	local range = Constants.Combat.PunchRange
+	local boxSize = Vector3.new(range, Constants.Combat.PunchBoxHeight, Constants.Combat.PunchBoxDepth)
+	local boxCenter = origin + Vector3.new(facing.X * range / 2, 0, 0)
+	local boxCFrame = CFrame.new(boxCenter)
+	local parts = Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams)
+
 	local seen: { [Player]: boolean } = {}
 	for _, part in ipairs(parts) do
 		local character = part:FindFirstAncestorOfClass("Model")
@@ -116,14 +125,8 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 				and isAlive(targetPlayer)
 				and not isInvincible(targetPlayer)
 			then
-				local targetRoot = character:FindFirstChild("HumanoidRootPart")
-				if targetRoot and targetRoot:IsA("BasePart") then
-					local delta = targetRoot.Position - origin
-					if delta.X * facing.X >= -0.1 then
-						seen[targetPlayer] = true
-						table.insert(results, targetPlayer)
-					end
-				end
+				seen[targetPlayer] = true
+				table.insert(results, targetPlayer)
 			end
 		end
 	end
@@ -199,6 +202,14 @@ function CombatService:_handlePunch(puncher: Player, isHeavy: boolean)
 	end
 end
 
+local function setDescendantCollisionGroup(character: Model, groupName: string)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = groupName
+		end
+	end
+end
+
 function CombatService:_handleDodgeRoll(player: Player)
 	local arenaService = (self._services :: Services).ArenaService
 	if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
@@ -222,6 +233,16 @@ function CombatService:_handleDodgeRoll(player: Player)
 		current = 0
 	end
 	character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, math.max(current, invulnUntil))
+
+	-- Atravessa outros players durante o dodge: troca collision group e
+	-- restaura ao fim. Captura referência do character pra não restaurar
+	-- em um respawn se player morrer durante o dodge.
+	setDescendantCollisionGroup(character, Constants.CollisionGroups.PlayersDodging)
+	task.delay(Constants.Combat.DodgeRollDurationSeconds, function()
+		if player.Character == character and character.Parent then
+			setDescendantCollisionGroup(character, Constants.CollisionGroups.Players)
+		end
+	end)
 end
 
 function CombatService:Init(services: Services)

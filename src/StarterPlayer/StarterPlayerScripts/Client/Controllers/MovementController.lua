@@ -22,6 +22,9 @@ MovementController._wasGrounded = true
 MovementController._dodgeUntil = 0
 MovementController._savedWalkSpeed = 16
 MovementController._savedAutoRotate = true
+MovementController._punchLockUntil = 0
+MovementController._punchLockSavedWalkSpeed = 16
+MovementController._punchLockActive = false
 
 local Z_LOCK = Constants.Arena.AxisLockValue
 local ACTION_JUMP = "BrawlArenaJump"
@@ -58,6 +61,39 @@ end
 
 function MovementController:IsDodging(): boolean
 	return os.clock() < self._dodgeUntil
+end
+
+function MovementController:IsPunchLocked(): boolean
+	return os.clock() < self._punchLockUntil
+end
+
+function MovementController:StartPunchLock(duration: number)
+	local humanoid = getHumanoid()
+	if not humanoid then
+		return
+	end
+	local now = os.clock()
+	local until_ = now + duration
+	-- Se já tem lock ativo, só extende (pra evitar overlap de restores).
+	if self._punchLockActive then
+		self._punchLockUntil = math.max(self._punchLockUntil, until_)
+		return
+	end
+	self._punchLockSavedWalkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or Constants.PlayerMovement.WalkSpeed
+	self._punchLockUntil = until_
+	self._punchLockActive = true
+	humanoid.WalkSpeed = 0
+	task.delay(duration, function()
+		-- Só restaura se ainda estamos no mesmo lock window (sem extensão).
+		if os.clock() >= self._punchLockUntil - 0.01 and self._punchLockActive then
+			local h = getHumanoid()
+			if h and h.Parent then
+				h.WalkSpeed = self._punchLockSavedWalkSpeed
+			end
+			self._punchLockActive = false
+			self._punchLockUntil = 0
+		end
+	end)
 end
 
 local function resolveFacingVector(root: BasePart, humanoid: Humanoid?): Vector3
