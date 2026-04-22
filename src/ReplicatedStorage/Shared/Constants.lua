@@ -112,9 +112,13 @@ local Constants = {
 		DominatingThreshold = 5,
 	},
 	Donate = {
-		ProductId = 0,
+		ProductId = 3579571980,
 		DisplayPrice = 100,
 		ProductName = "Support the Dev",
+	},
+	DonateKiosk = {
+		FadeNearDistance = 20,
+		FadeFarDistance = 80,
 	},
 	Analytics = {
 		Events = {

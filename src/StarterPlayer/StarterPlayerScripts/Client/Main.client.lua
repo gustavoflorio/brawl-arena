@@ -15,6 +15,7 @@ local controllerOrder = {
 	"SummaryController",
 	"DamageLabelController",
 	"JumpThroughController",
+	"DonateKioskController",
 }
 
 local controllers: { [string]: any } = {}
