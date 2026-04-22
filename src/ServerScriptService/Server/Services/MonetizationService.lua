@@ -1,5 +1,6 @@
 --!strict
 
+local CollectionService = game:GetService("CollectionService")
 local DataStoreService = game:GetService("DataStoreService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -17,19 +18,36 @@ function MonetizationService:Init(services: Services)
 	self._services = services
 end
 
+function MonetizationService:_bindKioskPrompt(prompt: Instance)
+	if not prompt:IsA("ProximityPrompt") then
+		return
+	end
+	prompt.Triggered:Connect(function(player)
+		self:PromptDonate(player)
+	end)
+end
+
 function MonetizationService:Start()
 	local ok, store = pcall(function()
 		return DataStoreService:GetDataStore(Constants.DataStore.PurchaseDataStoreName)
 	end)
-	if not ok then
+	if ok then
+		self._purchaseStore = store
+	else
 		warn("[MonetizationService] Não foi possível obter DataStore de purchases.")
-		return
 	end
-	self._purchaseStore = store
 
 	MarketplaceService.ProcessReceipt = function(receiptInfo)
 		return self:_processReceipt(receiptInfo)
 	end
+
+	local kioskTag = Constants.Tags.DonateKiosk
+	for _, prompt in ipairs(CollectionService:GetTagged(kioskTag)) do
+		self:_bindKioskPrompt(prompt)
+	end
+	CollectionService:GetInstanceAddedSignal(kioskTag):Connect(function(inst)
+		self:_bindKioskPrompt(inst)
+	end)
 end
 
 function MonetizationService:PromptDonate(player: Player)

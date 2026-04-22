@@ -62,6 +62,7 @@ local Constants = {
 	},
 	Tags = {
 		JumpThroughPlatform = "BrawlJumpThrough",
+		DonateKiosk = "BrawlDonateKiosk",
 	},
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",
