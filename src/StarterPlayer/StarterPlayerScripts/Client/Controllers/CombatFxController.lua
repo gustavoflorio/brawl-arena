@@ -13,8 +13,6 @@ local HIT_SEQ_ATTR = Constants.CharacterAttributes.HitSeq
 local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
 local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
 local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
-local PUNCH_DURATION = 0.7
-local HEAVY_PUNCH_DURATION = 1.0
 local DOUBLE_JUMP_DURATION = 0.6
 
 type TrackKind = "Punch" | "HeavyPunch" | "DodgeRoll" | "DoubleJump" | "Running"
@@ -114,12 +112,22 @@ local function stopDefaultTracks(animator: Animator, keepTrack: AnimationTrack?)
 	end
 end
 
+function CombatFxController:IsPunching(): boolean
+	for _, kind in ipairs({ "Punch", "HeavyPunch" }) do
+		local track = self._tracks[kind]
+		if track and track.IsPlaying then
+			return true
+		end
+	end
+	return false
+end
+
 function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
-	self:_stopTrack("Punch")
-	self:_stopTrack("HeavyPunch")
+	if self:IsPunching() then
+		return
+	end
 	local kind: TrackKind = isHeavy and "HeavyPunch" or "Punch"
 	local assetId = isHeavy and Constants.Assets.HeavyPunchAnimationId or Constants.Assets.PunchAnimationId
-	local duration = isHeavy and HEAVY_PUNCH_DURATION or PUNCH_DURATION
 	local track = self:_loadTrack(kind, assetId, Enum.AnimationPriority.Action4, false)
 	if not track then
 		return
@@ -131,12 +139,12 @@ function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 		stopDefaultTracks(animator :: Animator, track)
 	end
 	self._tracks[kind] = track
-	track:Play(0.05)
-	task.delay(duration, function()
+	track.Stopped:Connect(function()
 		if self._tracks[kind] == track then
 			self._tracks[kind] = nil
 		end
 	end)
+	track:Play(0.05)
 end
 
 function CombatFxController:PlayDodgeRoll()

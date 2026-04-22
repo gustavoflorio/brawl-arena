@@ -33,13 +33,16 @@ function InputController:_firePunch(isHeavy: boolean)
 	if self:_isBusy() then
 		return
 	end
+	local controllers = self._controllers
+	local fxController = controllers and controllers.CombatFxController
+	if fxController and type(fxController.IsPunching) == "function" and fxController:IsPunching() then
+		return
+	end
 	local remote = Remotes.GetRequestRemote()
 	if remote then
 		local action = isHeavy and Constants.Actions.HeavyPunch or Constants.Actions.Punch
 		remote:FireServer(action)
 	end
-	local controllers = self._controllers
-	local fxController = controllers and controllers.CombatFxController
 	if fxController and type(fxController.PlayLocalPunch) == "function" then
 		fxController:PlayLocalPunch(isHeavy)
 	end
