@@ -99,16 +99,6 @@ function CombatFxController:_stopTrack(kind: TrackKind)
 	self._tracks[kind] = nil
 end
 
-local function logPlayingTracks(animator: Animator, context: string)
-	local list = animator:GetPlayingAnimationTracks()
-	print(string.format("[Diag %s] %d tracks playing:", context, #list))
-	for i, t in ipairs(list) do
-		local animId = (t.Animation and t.Animation.AnimationId) or "?"
-		print(string.format("  [%d] id=%s priority=%s weightCurrent=%.2f weightTarget=%.2f length=%.2f timePos=%.2f",
-			i, animId, tostring(t.Priority), t.WeightCurrent, t.WeightTarget, t.Length, t.TimePosition))
-	end
-end
-
 local function stopDefaultTracks(animator: Animator, keepTrack: AnimationTrack?)
 	-- Stop anims default (Core/Movement/Idle priorities) pra que minha custom
 	-- (Action3/Action4) não sofra blend competing.
@@ -143,11 +133,6 @@ function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
 	end
 	self._tracks[kind] = track
 	track:Play(0.05)
-	if animator then
-		task.delay(0.15, function()
-			logPlayingTracks(animator :: Animator, "punch-" .. kind .. "-after-stop")
-		end)
-	end
 	task.delay(duration, function()
 		if self._tracks[kind] == track then
 			self._tracks[kind] = nil
@@ -203,11 +188,6 @@ function CombatFxController:PlayRunning()
 		end
 		existing:Play(0.1)
 		self._runningPlaying = true
-		if animator then
-			task.delay(0.2, function()
-				logPlayingTracks(animator :: Animator, "running-start-after-stop")
-			end)
-		end
 	end
 end
 
