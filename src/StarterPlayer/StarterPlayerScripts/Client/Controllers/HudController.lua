@@ -35,8 +35,6 @@ HudController._rankAccent = nil :: Frame?
 HudController._levelLabel = nil :: TextLabel?
 HudController._xpBarFill = nil :: Frame?
 HudController._xpText = nil :: TextLabel?
-HudController._damagePanel = nil :: Frame?
-HudController._damageLabel = nil :: TextLabel?
 HudController._insetGui = nil :: ScreenGui?
 HudController._fullGui = nil :: ScreenGui?
 
@@ -54,17 +52,6 @@ local function readFlag(): boolean
 		return true
 	end
 	return value == true
-end
-
-local function damageTierColor(pct: number): Color3
-	if pct < 50 then
-		return Color3.fromRGB(255, 255, 255)
-	elseif pct < 100 then
-		return Color3.fromRGB(255, 200, 60)
-	elseif pct < 150 then
-		return Color3.fromRGB(255, 120, 40)
-	end
-	return Color3.fromRGB(255, 60, 60)
 end
 
 -- ================= NEW HUD BUILD =================
@@ -195,34 +182,8 @@ local function buildNewHud(self)
 	self._xpBarFill = xpBarFill
 	self._xpText = xpText
 
-	-- Damage panel (bottom-center, arena only)
-	local damagePanel = Instance.new("Frame")
-	damagePanel.Name = "DamagePanel"
-	damagePanel.AnchorPoint = Vector2.new(0.5, 1)
-	damagePanel.Position = UDim2.new(0.5, 0, 0.98, 0)
-	damagePanel.Size = UDim2.new(0, 180, 0, 70)
-	damagePanel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	damagePanel.BackgroundTransparency = 0.25
-	damagePanel.BorderSizePixel = 0
-	damagePanel.Visible = false
-	damagePanel.Parent = fullGui
-
-	local dmgCorner = Instance.new("UICorner")
-	dmgCorner.CornerRadius = UDim.new(0, 12)
-	dmgCorner.Parent = damagePanel
-
-	local damage = Instance.new("TextLabel")
-	damage.Name = "Damage"
-	damage.Size = UDim2.new(1, 0, 1, 0)
-	damage.BackgroundTransparency = 1
-	damage.Text = "0%"
-	damage.TextColor3 = Color3.fromRGB(255, 255, 255)
-	damage.TextSize = 44
-	damage.Font = Enum.Font.GothamBlack
-	damage.Parent = damagePanel
-
-	self._damagePanel = damagePanel
-	self._damageLabel = damage
+	-- Damage é mostrado pelo DamageLabelController (world-space BillboardGui acima do char).
+	-- Sem painel bottom-center no novo HUD — evita redundância + overlap com stock panel.
 
 	-- Stock panel (inside fullGui so it ignores inset — bottom needs no inset protection)
 	self._stockPanel = ArenaStockPanel.new(fullGui)
@@ -359,12 +320,9 @@ local function fadePanel(panel: GuiObject?, targetTransparency: number, seconds:
 end
 
 function HudController:_enterLobbyLayout()
-	-- Show lobby HUD: progressPanel (level/xp) + rankBadge; hide arena stock + damage
+	-- Lobby: progressPanel (level/xp) + rankBadge. Arena stock escondido.
 	if self._stockPanel then
 		self._stockPanel:Hide()
-	end
-	if self._damagePanel then
-		self._damagePanel.Visible = false
 	end
 	if self._lobbyProgressPanel then
 		self._lobbyProgressPanel.Visible = true
@@ -379,17 +337,12 @@ function HudController:_enterLobbyLayout()
 end
 
 function HudController:_enterArenaLayout()
-	-- Show arena HUD: stock panel + damage; hide lobby progress
+	-- Arena: apenas stock panel (avatares). Dano mostrado pelo DamageLabelController.
 	if self._lobbyProgressPanel then
 		self._lobbyProgressPanel.Visible = false
 	end
 	if self._rankBadge then
 		self._rankBadge.Visible = false
-	end
-	if self._damagePanel then
-		self._damagePanel.Visible = true
-		self._damagePanel.BackgroundTransparency = 1
-		fadePanel(self._damagePanel, 0.25, TRANSITION_FADE_SECONDS)
 	end
 	if self._stockPanel then
 		self._stockPanel:Show()
@@ -406,7 +359,7 @@ function HudController:_transitionTo(newState: string)
 	if previousState then
 		-- Fade out previous first
 		if previousState == "InArena" then
-			fadePanel(self._damagePanel, 1, TRANSITION_FADE_SECONDS)
+			-- Stock panel é escondido no _enterLobbyLayout. Nada pra fadear aqui.
 		else
 			fadePanel(self._lobbyProgressPanel, 1, TRANSITION_FADE_SECONDS)
 			fadePanel(self._rankBadge, 1, TRANSITION_FADE_SECONDS)
@@ -437,12 +390,6 @@ function HudController:_applyStateSnapshot(snapshot: { [string]: any })
 	local state = snapshot.state
 	if typeof(state) == "string" then
 		self:_transitionTo(state == "InArena" and "InArena" or "Lobby")
-	end
-
-	if self._damageLabel and typeof(snapshot.damagePercent) == "number" then
-		local pct = math.floor(snapshot.damagePercent)
-		self._damageLabel.Text = string.format("%d%%", pct)
-		self._damageLabel.TextColor3 = damageTierColor(pct)
 	end
 
 	if self._levelLabel and typeof(snapshot.level) == "number" then
