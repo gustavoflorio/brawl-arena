@@ -14,10 +14,14 @@ local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
 local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
 local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
 local HIT_KIND_ATTR = Constants.CharacterAttributes.HitKind
-local CHARGING_UNTIL_ATTR = Constants.CharacterAttributes.ChargingUntil
+local DAMAGE_PERCENT_ATTR = Constants.CharacterAttributes.DamagePercent
 local DOUBLE_JUMP_DURATION = 0.6
 local VFX_IMPACT_DURATION = 0.6
-local VFX_TRAIL_DURATION = 1.5
+-- Trail duration é proporcional ao damage% do target no momento do hit:
+-- 100% dmg = VFX_TRAIL_BASE_DURATION. 200% = 2x. 50% = metade. Um minimo
+-- curto (0.05s) garante que mesmo hits em alvos com 0% mostrem um flash.
+local VFX_TRAIL_BASE_DURATION = 0.7
+local VFX_TRAIL_MIN_DURATION = 0.05
 
 local vfxFolder: Folder? = ReplicatedStorage:FindFirstChild("Punch VFX") :: Folder?
 
@@ -370,7 +374,7 @@ local function playImpactVFX(character: Model)
 	end)
 end
 
-local function playTrailVFX(character: Model, isHeavy: boolean)
+local function playTrailVFX(character: Model, isHeavy: boolean, damagePercent: number)
 	local hrp = getHumanoidRoot(character)
 	if not hrp then
 		return
@@ -381,44 +385,12 @@ local function playTrailVFX(character: Model, isHeavy: boolean)
 		return
 	end
 	att.Parent = hrp
-	task.delay(VFX_TRAIL_DURATION, function()
+	local duration = math.max(VFX_TRAIL_MIN_DURATION, (damagePercent / 100) * VFX_TRAIL_BASE_DURATION)
+	task.delay(duration, function()
 		if att.Parent then
 			att:Destroy()
 		end
 	end)
-end
-
-local function startChargeVFX(character: Model): Attachment?
-	local hrp = getHumanoidRoot(character)
-	if not hrp then
-		return nil
-	end
-	local att = cloneAttachmentFromTemplate("Heavy hit charge", "Attachment")
-	if not att then
-		return nil
-	end
-	att.Parent = hrp
-	return att
-end
-
-local function bindChargeListener(character: Model)
-	local activeAttachment: Attachment? = nil
-
-	local function refresh()
-		local rawUntil = character:GetAttribute(CHARGING_UNTIL_ATTR)
-		local isCharging = typeof(rawUntil) == "number" and rawUntil > os.clock()
-		if isCharging and not activeAttachment then
-			activeAttachment = startChargeVFX(character)
-		elseif not isCharging and activeAttachment then
-			if activeAttachment.Parent then
-				activeAttachment:Destroy()
-			end
-			activeAttachment = nil
-		end
-	end
-
-	character:GetAttributeChangedSignal(CHARGING_UNTIL_ATTR):Connect(refresh)
-	refresh()
 end
 
 -- Hit listener com VFX: extende o sound-only da versão anterior.
@@ -435,8 +407,10 @@ local function bindHitVFXListener(character: Model)
 		lastSeen = seq
 		local kind = character:GetAttribute(HIT_KIND_ATTR)
 		local isHeavy = kind == "Heavy"
+		local dmgAttr = character:GetAttribute(DAMAGE_PERCENT_ATTR)
+		local damagePercent = typeof(dmgAttr) == "number" and dmgAttr or 0
 		playImpactVFX(character)
-		playTrailVFX(character, isHeavy)
+		playTrailVFX(character, isHeavy, damagePercent)
 	end)
 end
 
@@ -444,7 +418,6 @@ local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
 		bindHitVFXListener(character)
-		bindChargeListener(character)
 		if player == localPlayer then
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
