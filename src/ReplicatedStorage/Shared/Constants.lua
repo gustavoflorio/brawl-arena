@@ -60,6 +60,9 @@ local Constants = {
 		Players = "BrawlPlayers",
 		PlayersDodging = "BrawlPlayersDodging",
 	},
+	Tags = {
+		JumpThroughPlatform = "BrawlJumpThrough",
+	},
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",
 		EliminationSeq = "BrawlEliminationSeq",
