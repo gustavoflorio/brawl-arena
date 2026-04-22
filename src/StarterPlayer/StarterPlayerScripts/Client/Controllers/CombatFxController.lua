@@ -15,6 +15,8 @@ local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
 local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
 local HIT_KIND_ATTR = Constants.CharacterAttributes.HitKind
 local DAMAGE_PERCENT_ATTR = Constants.CharacterAttributes.DamagePercent
+local HITSTOP_SEQ_ATTR = Constants.CharacterAttributes.HitStopSeq
+local HITSTOP_UNTIL_ATTR = Constants.CharacterAttributes.HitStopUntil
 local DOUBLE_JUMP_DURATION = 0.6
 local VFX_IMPACT_DURATION = 0.6
 -- Trail duration é proporcional ao damage% do target no momento do hit:
@@ -39,6 +41,7 @@ local CombatFxController = {}
 CombatFxController._animCache = {} :: { [string]: Animation }
 CombatFxController._tracks = {} :: { [TrackKind]: AnimationTrack? }
 CombatFxController._runningPlaying = false
+CombatFxController._controllers = nil :: { [string]: any }?
 
 local function getHumanoid(character: Model?): Humanoid?
 	if not character then
@@ -303,6 +306,61 @@ local function bindEliminationListener(character: Model)
 	end)
 end
 
+local function bindHitStopListener(character: Model, fxController: any)
+	-- Só roda pro próprio character. Congela combat anims via AdjustSpeed(0)
+	-- e delega walkspeed lock ao MovementController (mesma pattern do
+	-- PunchLock). Sem isso, char faria animação normal + movia enquanto
+	-- server achava que estava em hitstop → desincronia visual.
+	local lastSeen = character:GetAttribute(HITSTOP_SEQ_ATTR)
+	if typeof(lastSeen) ~= "number" then
+		lastSeen = 0
+	end
+	character:GetAttributeChangedSignal(HITSTOP_SEQ_ATTR):Connect(function()
+		local seq = character:GetAttribute(HITSTOP_SEQ_ATTR)
+		if typeof(seq) ~= "number" or seq <= lastSeen then
+			return
+		end
+		lastSeen = seq
+		local until_ = character:GetAttribute(HITSTOP_UNTIL_ATTR)
+		if typeof(until_) ~= "number" then
+			return
+		end
+		local remaining = until_ - os.clock()
+		if remaining <= 0 then
+			return
+		end
+
+		-- Delega walkspeed ao MovementController (ele já sabe save/restore
+		-- e coexistir com PunchLock ativo).
+		local movementController = fxController._controllers and fxController._controllers.MovementController
+		if movementController and type(movementController.StartHitStopLock) == "function" then
+			movementController:StartHitStopLock(remaining)
+		end
+
+		-- Congela combat anim tracks em curso. Só track de punch/heavy:
+		-- running/jump loopam normalmente (se target estava parado socando
+		-- quando foi hit, a anim de punch freeza no meio).
+		local pausedTracks: { { track: AnimationTrack, prevSpeed: number } } = {}
+		for _, kind in ipairs({ "Punch", "HeavyPunch" }) do
+			local track = fxController._tracks[kind]
+			if track and track.IsPlaying then
+				table.insert(pausedTracks, { track = track, prevSpeed = track.Speed })
+				track:AdjustSpeed(0)
+			end
+		end
+		if #pausedTracks == 0 then
+			return
+		end
+		task.delay(remaining, function()
+			for _, entry in ipairs(pausedTracks) do
+				if entry.track.IsPlaying then
+					entry.track:AdjustSpeed(entry.prevSpeed > 0 and entry.prevSpeed or 1)
+				end
+			end
+		end)
+	end)
+end
+
 local function bindKnockbackListener(character: Model)
 	-- Só roda pro próprio character do local player — ele tem physics ownership
 	-- e é o único que consegue aplicar velocity que replica corretamente.
@@ -421,6 +479,7 @@ local function bindPlayer(player: Player, fxController: any)
 		if player == localPlayer then
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
+			bindHitStopListener(character, fxController)
 			fxController:ResetCharacterTracks()
 		end
 	end
@@ -430,7 +489,9 @@ local function bindPlayer(player: Player, fxController: any)
 	player.CharacterAdded:Connect(onCharacter)
 end
 
-function CombatFxController:Init(_controllers: { [string]: any }) end
+function CombatFxController:Init(controllers: { [string]: any })
+	self._controllers = controllers
+end
 
 function CombatFxController:Start()
 	-- ContentProvider:PreloadAsync é obrigatório: sem preload,

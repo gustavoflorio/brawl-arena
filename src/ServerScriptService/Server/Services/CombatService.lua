@@ -134,7 +134,26 @@ function CombatService:_findTargets(puncher: Player, origin: Vector3, facing: Ve
 	return results
 end
 
-function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, damageMultiplier: number)
+local function bumpSeqAttribute(character: Model, attrName: string)
+	local current = character:GetAttribute(attrName)
+	local nextVal = (typeof(current) == "number" and current or 0) + 1
+	character:SetAttribute(attrName, nextVal)
+end
+
+local function applyHitStop(character: Model, duration: number)
+	-- HitStopUntil é lido pelo InputController (bloqueia input) e
+	-- pelo CombatFxController (pausa anim + walkspeed). Se hit múltiplo
+	-- chegar durante hitstop ativo, preserva o maior deadline.
+	local current = character:GetAttribute(Constants.CharacterAttributes.HitStopUntil)
+	local target = os.clock() + duration
+	if typeof(current) == "number" and current > target then
+		target = current
+	end
+	character:SetAttribute(Constants.CharacterAttributes.HitStopUntil, target)
+	bumpSeqAttribute(character, Constants.CharacterAttributes.HitStopSeq)
+end
+
+function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, damageMultiplier: number, isHeavy: boolean)
 	local arenaService = (self._services :: Services).ArenaService
 	local punchRoot = getCharacterRoot(puncher)
 	local targetRoot = getCharacterRoot(target)
@@ -153,30 +172,44 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	local kbVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical, 0)
 
 	local targetCharacter = target.Character
+	local puncherCharacter = puncher.Character
+
+	-- Hitstop assimétrico: target freeza mais que puncher. Smash-like moderno
+	-- (attacker mantém flow, target sente peso).
+	local targetHitStop = isHeavy and Constants.Combat.HitStopTargetHeavy or Constants.Combat.HitStopTargetLight
+	local puncherHitStop = isHeavy and Constants.Combat.HitStopPuncherHeavy or Constants.Combat.HitStopPuncherLight
+
 	if targetCharacter then
 		-- HitKind antes de incrementar HitSeq: client lê kind atomicamente
 		-- junto com o trigger (mesmo frame).
 		targetCharacter:SetAttribute(
 			Constants.CharacterAttributes.HitKind,
-			damageMultiplier > 1 and "Heavy" or "Light"
+			isHeavy and "Heavy" or "Light"
 		)
-
-		local attrHit = Constants.CharacterAttributes.HitSeq
-		local currentHit = targetCharacter:GetAttribute(attrHit)
-		local nextSeq = (typeof(currentHit) == "number" and currentHit or 0) + 1
-		targetCharacter:SetAttribute(attrHit, nextSeq)
-
+		bumpSeqAttribute(targetCharacter, Constants.CharacterAttributes.HitSeq)
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
 
-		-- Knockback via attribute pattern: client do target aplica velocity
-		-- (Roblox physics ownership do character pertence ao owner client).
+		applyHitStop(targetCharacter, targetHitStop)
+
+		-- Knockback aplicado APÓS o hitstop do target terminar. Sem o delay,
+		-- client do target aplica AssemblyLinearVelocity enquanto anim está
+		-- congelada → char voa em pose de soco. Smash congela posições
+		-- durante hitlag; no Roblox simulamos atrasando a velocity.
 		local kbAttr = Constants.CharacterAttributes.KBVelocity
 		local kbSeqAttr = Constants.CharacterAttributes.KBSeq
-		targetCharacter:SetAttribute(kbAttr, kbVelocity)
-		local currentKBSeq = targetCharacter:GetAttribute(kbSeqAttr)
-		local nextKBSeq = (typeof(currentKBSeq) == "number" and currentKBSeq or 0) + 1
-		targetCharacter:SetAttribute(kbSeqAttr, nextKBSeq)
+		task.delay(targetHitStop, function()
+			local current = target.Character
+			if current ~= targetCharacter or not current.Parent then
+				return
+			end
+			current:SetAttribute(kbAttr, kbVelocity)
+			bumpSeqAttribute(current, kbSeqAttr)
+		end)
+	end
+
+	if puncherCharacter then
+		applyHitStop(puncherCharacter, puncherHitStop)
 	end
 
 	arenaService:PublishState(target)
@@ -218,7 +251,7 @@ function CombatService:_handlePunch(puncher: Player, isHeavy: boolean)
 		local facing = resolveFacing(root)
 		local targets = self:_findTargets(puncher, root.Position, facing, range)
 		for _, target in ipairs(targets) do
-			self:_applyHit(puncher, target, facing, multiplier)
+			self:_applyHit(puncher, target, facing, multiplier, isHeavy)
 		end
 	end)
 end

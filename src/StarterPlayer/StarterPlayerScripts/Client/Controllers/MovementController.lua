@@ -26,6 +26,9 @@ MovementController._savedAutoRotate = true
 MovementController._punchLockUntil = 0
 MovementController._punchLockSavedWalkSpeed = 16
 MovementController._punchLockActive = false
+MovementController._hitStopUntil = 0
+MovementController._hitStopSavedWalkSpeed = 16
+MovementController._hitStopActive = false
 
 local Z_LOCK = Constants.Arena.AxisLockValue
 local ACTION_JUMP = "BrawlArenaJump"
@@ -78,6 +81,42 @@ end
 
 function MovementController:IsPunchLocked(): boolean
 	return os.clock() < self._punchLockUntil
+end
+
+function MovementController:IsHitStopped(): boolean
+	return os.clock() < self._hitStopUntil
+end
+
+function MovementController:StartHitStopLock(duration: number)
+	-- Mesma pattern do PunchLock: salva walkspeed, zera, restaura no fim.
+	-- Hits consecutivos só extendem o deadline (maior dos dois vale).
+	local humanoid = getHumanoid()
+	if not humanoid then
+		return
+	end
+	local now = os.clock()
+	local until_ = now + duration
+	if self._hitStopActive then
+		self._hitStopUntil = math.max(self._hitStopUntil, until_)
+		return
+	end
+	-- Se o punch lock já zerou walkspeed, não precisamos salvar de novo
+	-- (senão salvaríamos 0 e restauraríamos 0 ao final do hitstop).
+	local baseSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or Constants.PlayerMovement.WalkSpeed
+	self._hitStopSavedWalkSpeed = baseSpeed
+	self._hitStopUntil = until_
+	self._hitStopActive = true
+	humanoid.WalkSpeed = 0
+	task.delay(duration, function()
+		if os.clock() >= self._hitStopUntil - 0.01 and self._hitStopActive then
+			local h = getHumanoid()
+			if h and h.Parent and not self._punchLockActive then
+				h.WalkSpeed = self._hitStopSavedWalkSpeed
+			end
+			self._hitStopActive = false
+			self._hitStopUntil = 0
+		end
+	end)
 end
 
 function MovementController:StartPunchLock(duration: number)
