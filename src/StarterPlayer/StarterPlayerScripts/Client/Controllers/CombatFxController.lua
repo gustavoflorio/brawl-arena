@@ -15,7 +15,6 @@ local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
 local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
 local PUNCH_DURATION = 0.7
 local HEAVY_PUNCH_DURATION = 1.0
-local DODGE_ROLL_DURATION = 1.0
 local DOUBLE_JUMP_DURATION = 0.6
 
 type TrackKind = "Punch" | "HeavyPunch" | "DodgeRoll" | "DoubleJump" | "Running"
@@ -147,8 +146,11 @@ function CombatFxController:PlayDodgeRoll()
 		return
 	end
 	self._tracks["DodgeRoll"] = track
+	local multiplier = Constants.Combat.DodgeRollSpeedMultiplier
 	track:Play(0.05)
-	task.delay(DODGE_ROLL_DURATION, function()
+	track:AdjustSpeed(multiplier)
+	local effectiveDuration = Constants.Combat.DodgeRollBaseDurationSeconds / multiplier
+	task.delay(effectiveDuration, function()
 		if self._tracks["DodgeRoll"] == track then
 			self._tracks["DodgeRoll"] = nil
 		end
