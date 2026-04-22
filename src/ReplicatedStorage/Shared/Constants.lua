@@ -110,8 +110,8 @@ local Constants = {
 	},
 	Assets = {
 		PunchAnimationId = "rbxassetid://105919524623967",
-		HeavyPunchAnimationId = "rbxassetid://106423517560689",
-		RunAnimationId = "rbxassetid://83465597129350",
+		HeavyPunchAnimationId = "rbxassetid://83755342484641",
+		RunAnimationId = "rbxassetid://105129044821151",
 		DoubleJumpAnimationId = "rbxassetid://74399426620925",
 		DodgeRollAnimationId = "rbxassetid://115857807557239",
 		PunchHitSound = {
