@@ -24,8 +24,8 @@ local function createLabel(character: Model): BillboardGui
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "BrawlDamageLabel"
-	gui.Size = UDim2.new(0, 140, 0, 50)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+	gui.Size = UDim2.new(0, 90, 0, 32)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 2.5, 0)
 	gui.AlwaysOnTop = true
 	gui.LightInfluence = 0
 	gui.MaxDistance = 120
