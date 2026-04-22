@@ -99,6 +99,14 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	playerData:AddKill(puncher)
 	playerData:AddDeath(target)
 
+	-- Registra kill + XP no state da arena do puncher pro summary da
+	-- sessão atual (state.killsSinceEnter, state.xpSinceEnter). Sem isso,
+	-- profile.TotalKills e profile.XP sobem mas o summary ao cair mostra
+	-- 'kills: 0, +0 XP' sempre.
+	if arenaService and type(arenaService.RegisterKill) == "function" then
+		arenaService:RegisterKill(puncher, totalXP)
+	end
+
 	local newLevel, _, leveledUp = playerData:AddXP(puncher, totalXP)
 	local previousLevelPuncher = newLevel - (leveledUp and 1 or 0)
 
