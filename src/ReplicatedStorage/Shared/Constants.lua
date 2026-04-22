@@ -79,6 +79,8 @@ local Constants = {
 		KBVelocity = "BrawlKBVelocity",
 		KBSeq = "BrawlKBSeq",
 		ArenaActive = "BrawlArenaActive",
+		HitKind = "BrawlHitKind",
+		ChargingUntil = "BrawlChargingUntil",
 	},
 	XP = {
 		Base = 20,

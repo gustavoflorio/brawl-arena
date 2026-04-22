@@ -154,6 +154,13 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 
 	local targetCharacter = target.Character
 	if targetCharacter then
+		-- HitKind antes de incrementar HitSeq: client lê kind atomicamente
+		-- junto com o trigger (mesmo frame).
+		targetCharacter:SetAttribute(
+			Constants.CharacterAttributes.HitKind,
+			damageMultiplier > 1 and "Heavy" or "Light"
+		)
+
 		local attrHit = Constants.CharacterAttributes.HitSeq
 		local currentHit = targetCharacter:GetAttribute(attrHit)
 		local nextSeq = (typeof(currentHit) == "number" and currentHit or 0) + 1
@@ -197,10 +204,22 @@ function CombatService:_handlePunch(puncher: Player, isHeavy: boolean)
 	local range = isHeavy and Constants.Combat.HeavyPunchRange or Constants.Combat.PunchRange
 	local hitDelay = isHeavy and Constants.Combat.HeavyPunchHitDelaySeconds or Constants.Combat.PunchHitDelaySeconds
 
+	-- Charge VFX no heavy: attribute fica setado até o hit disparar
+	-- (ou o cast ser abortado). Clients escutam e tocam/param o effect.
+	local puncherCharacter = puncher.Character
+	if isHeavy and puncherCharacter then
+		puncherCharacter:SetAttribute(Constants.CharacterAttributes.ChargingUntil, now + hitDelay)
+	end
+
 	-- Hit é aplicado no final da animação. Facing e posição são resolvidos
 	-- no momento do impacto, não no início — char pode ter virado durante
 	-- o cast (após startup lock terminar).
 	task.delay(hitDelay, function()
+		-- Sempre limpa charge, independente do outcome do hit.
+		if isHeavy and puncherCharacter and puncherCharacter.Parent then
+			puncherCharacter:SetAttribute(Constants.CharacterAttributes.ChargingUntil, 0)
+		end
+
 		if arenaService:GetState(puncher) ~= Constants.PlayerState.InArena then
 			return
 		end

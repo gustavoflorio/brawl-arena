@@ -13,7 +13,13 @@ local HIT_SEQ_ATTR = Constants.CharacterAttributes.HitSeq
 local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
 local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
 local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
+local HIT_KIND_ATTR = Constants.CharacterAttributes.HitKind
+local CHARGING_UNTIL_ATTR = Constants.CharacterAttributes.ChargingUntil
 local DOUBLE_JUMP_DURATION = 0.6
+local VFX_IMPACT_DURATION = 0.6
+local VFX_TRAIL_DURATION = 1.5
+
+local vfxFolder: Folder? = ReplicatedStorage:FindFirstChild("Punch VFX") :: Folder?
 
 type TrackKind = "Punch" | "HeavyPunch" | "DodgeRoll" | "DoubleJump" | "Running"
 
@@ -322,9 +328,123 @@ local function bindKnockbackListener(character: Model)
 	end)
 end
 
+-- ====== Punch VFX cloning ======
+
+local function getHumanoidRoot(character: Model): BasePart?
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp and hrp:IsA("BasePart") then
+		return hrp
+	end
+	return nil
+end
+
+local function cloneAttachmentFromTemplate(templateName: string, attachmentName: string): Attachment?
+	if not vfxFolder then
+		return nil
+	end
+	local template = vfxFolder:FindFirstChild(templateName)
+	if not template then
+		return nil
+	end
+	local attachment = template:FindFirstChild(attachmentName)
+	if attachment and attachment:IsA("Attachment") then
+		return attachment:Clone()
+	end
+	return nil
+end
+
+local function playImpactVFX(character: Model)
+	local hrp = getHumanoidRoot(character)
+	if not hrp then
+		return
+	end
+	local att = cloneAttachmentFromTemplate("Hit impact", "Punch")
+	if not att then
+		return
+	end
+	att.Parent = hrp
+	task.delay(VFX_IMPACT_DURATION, function()
+		if att.Parent then
+			att:Destroy()
+		end
+	end)
+end
+
+local function playTrailVFX(character: Model, isHeavy: boolean)
+	local hrp = getHumanoidRoot(character)
+	if not hrp then
+		return
+	end
+	local attachmentName = isHeavy and "HeavyPunch" or "Punch"
+	local att = cloneAttachmentFromTemplate("Hit trail", attachmentName)
+	if not att then
+		return
+	end
+	att.Parent = hrp
+	task.delay(VFX_TRAIL_DURATION, function()
+		if att.Parent then
+			att:Destroy()
+		end
+	end)
+end
+
+local function startChargeVFX(character: Model): Attachment?
+	local hrp = getHumanoidRoot(character)
+	if not hrp then
+		return nil
+	end
+	local att = cloneAttachmentFromTemplate("Heavy hit charge", "Attachment")
+	if not att then
+		return nil
+	end
+	att.Parent = hrp
+	return att
+end
+
+local function bindChargeListener(character: Model)
+	local activeAttachment: Attachment? = nil
+
+	local function refresh()
+		local rawUntil = character:GetAttribute(CHARGING_UNTIL_ATTR)
+		local isCharging = typeof(rawUntil) == "number" and rawUntil > os.clock()
+		if isCharging and not activeAttachment then
+			activeAttachment = startChargeVFX(character)
+		elseif not isCharging and activeAttachment then
+			if activeAttachment.Parent then
+				activeAttachment:Destroy()
+			end
+			activeAttachment = nil
+		end
+	end
+
+	character:GetAttributeChangedSignal(CHARGING_UNTIL_ATTR):Connect(refresh)
+	refresh()
+end
+
+-- Hit listener com VFX: extende o sound-only da versão anterior.
+local function bindHitVFXListener(character: Model)
+	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
+	if typeof(lastSeen) ~= "number" then
+		lastSeen = 0
+	end
+	character:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
+		local seq = character:GetAttribute(HIT_SEQ_ATTR)
+		if typeof(seq) ~= "number" or seq <= lastSeen then
+			return
+		end
+		lastSeen = seq
+		local kind = character:GetAttribute(HIT_KIND_ATTR)
+		local isHeavy = kind == "Heavy"
+		playImpactVFX(character)
+		playTrailVFX(character, isHeavy)
+	end)
+end
+
 local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
+		bindHitVFXListener(character)
+		bindChargeListener(character)
 		if player == localPlayer then
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
