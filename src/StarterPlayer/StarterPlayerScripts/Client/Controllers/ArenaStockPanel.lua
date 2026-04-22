@@ -304,13 +304,11 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		return
 	end
 
-	local avatarFrame = card.avatarImage.Parent :: Frame
-	local absPos = avatarFrame.AbsolutePosition
-	local absSize = avatarFrame.AbsoluteSize
-	local centerX = absPos.X + absSize.X * 0.5
-	local centerY = absPos.Y + absSize.Y * 0.5
-
-	local screenGui = card.frame:FindFirstAncestorOfClass("ScreenGui")
+	-- Fragmentos são parented ao card (não ao ScreenGui) e usam card-local coords.
+	-- Garante que shatter sempre acompanha a posição do card mesmo se layout mudar
+	-- durante a animação. Avatar center in card-local = (CARD_WIDTH/2, AVATAR_SIZE/2).
+	local centerX = CARD_WIDTH * 0.5
+	local centerY = AVATAR_SIZE * 0.5
 
 	for i = 1, 8 do
 		local frag = Instance.new("Frame")
@@ -320,7 +318,7 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		frag.BackgroundColor3 = LOCAL_BORDER
 		frag.BorderSizePixel = 0
 		frag.ZIndex = 10
-		frag.Parent = screenGui
+		frag.Parent = card.frame
 		local fragCorner = Instance.new("UICorner")
 		fragCorner.CornerRadius = UDim.new(0, 2)
 		fragCorner.Parent = frag
