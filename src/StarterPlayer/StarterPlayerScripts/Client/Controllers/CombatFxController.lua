@@ -146,11 +146,8 @@ function CombatFxController:PlayDodgeRoll()
 		return
 	end
 	self._tracks["DodgeRoll"] = track
-	local multiplier = Constants.Combat.DodgeRollSpeedMultiplier
 	track:Play(0.05)
-	track:AdjustSpeed(multiplier)
-	local effectiveDuration = Constants.Combat.DodgeRollBaseDurationSeconds / multiplier
-	task.delay(effectiveDuration, function()
+	task.delay(Constants.Combat.DodgeRollDurationSeconds, function()
 		if self._tracks["DodgeRoll"] == track then
 			self._tracks["DodgeRoll"] = nil
 		end

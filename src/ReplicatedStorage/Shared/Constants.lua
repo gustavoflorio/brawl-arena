@@ -26,9 +26,9 @@ local Constants = {
 		HeavyPunchCooldown = 1.2,
 		HeavyPunchMultiplier = 3,
 		DodgeRollCooldown = 2.0,
-		DodgeRollBaseDurationSeconds = 1.0,
-		DodgeRollSpeedMultiplier = 2.0,
-		DoubleJumpVelocity = 55,
+		DodgeRollDurationSeconds = 1.0,
+		DodgeRollVelocityMultiplier = 2.0,
+		DoubleJumpVelocity = 110,
 		KnockbackBase = 40,
 		KnockbackGrowth = 1.5,
 		KnockbackVertical = 35,
@@ -44,6 +44,11 @@ local Constants = {
 	PlayerState = {
 		InLobby = "InLobby",
 		InArena = "InArena",
+	},
+	PlayerMovement = {
+		WalkSpeed = 32,
+		JumpHeight = 14.4,
+		JumpPower = 100,
 	},
 	CharacterAttributes = {
 		HitSeq = "BrawlHitSeq",

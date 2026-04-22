@@ -2,12 +2,18 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 -- Bloquear spawn de character automático. PlayerDataService controla
 -- o spawn via player:LoadCharacter() após o profile estar carregado.
 Players.CharacterAutoLoads = false
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
+
+-- Move speed e jump altos (2x default) pra arena ficar mais ágil.
+StarterPlayer.CharacterWalkSpeed = Constants.PlayerMovement.WalkSpeed
+StarterPlayer.CharacterJumpHeight = Constants.PlayerMovement.JumpHeight
+StarterPlayer.CharacterJumpPower = Constants.PlayerMovement.JumpPower
 
 local function ensureRemotes()
 	local folder = ReplicatedStorage:FindFirstChild(Constants.Remotes.Folder)
