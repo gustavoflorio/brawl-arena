@@ -4,13 +4,24 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
 local MAX_CARDS = 4
-local CARD_SIZE = 56 -- px, white circle
+local CARD_WIDTH = 60
+local CARD_HEIGHT = 82
+local AVATAR_SIZE = 44
 local CARD_GAP = 8
-local RING_INSET = 2 -- white ring thickness visible around avatar
 local PLACEHOLDER_IMAGE = "rbxasset://textures/ui/GuiImagePlaceholder.png"
 
 local LOCAL_BORDER = Color3.fromRGB(255, 200, 60)
 local RING_COLOR = Color3.fromRGB(255, 255, 255)
+
+local RANK_TIER_COLORS = {
+	Unranked = Color3.fromRGB(120, 120, 130),
+	Bronze = Color3.fromRGB(205, 127, 50),
+	Silver = Color3.fromRGB(200, 200, 210),
+	Gold = Color3.fromRGB(255, 200, 71),
+	Platinum = Color3.fromRGB(185, 242, 255),
+	Diamond = Color3.fromRGB(140, 220, 255),
+	Champion = Color3.fromRGB(255, 90, 90),
+}
 
 type ArenaPlayerSnapshot = {
 	userId: number,
@@ -24,6 +35,9 @@ type Card = {
 	frame: Frame,
 	avatarImage: ImageLabel,
 	localStroke: UIStroke,
+	damageLabel: TextLabel,
+	levelLabel: TextLabel,
+	rankLogo: ImageLabel,
 	userId: number?,
 	shattering: boolean?,
 }
@@ -42,44 +56,140 @@ function ArenaStockPanel.new(parent: ScreenGui)
 	return self
 end
 
+local function damageTierColor(pct: number): Color3
+	if pct < 50 then
+		return Color3.fromRGB(255, 255, 255)
+	elseif pct < 100 then
+		return Color3.fromRGB(255, 200, 60)
+	elseif pct < 150 then
+		return Color3.fromRGB(255, 120, 40)
+	end
+	return Color3.fromRGB(255, 60, 60)
+end
+
+local function rankTierColor(rankName: string): Color3
+	if string.find(rankName, "Bronze") then
+		return RANK_TIER_COLORS.Bronze
+	elseif string.find(rankName, "Silver") then
+		return RANK_TIER_COLORS.Silver
+	elseif string.find(rankName, "Gold") then
+		return RANK_TIER_COLORS.Gold
+	elseif string.find(rankName, "Platinum") then
+		return RANK_TIER_COLORS.Platinum
+	elseif string.find(rankName, "Diamond") then
+		return RANK_TIER_COLORS.Diamond
+	elseif string.find(rankName, "Champion") then
+		return RANK_TIER_COLORS.Champion
+	end
+	return RANK_TIER_COLORS.Unranked
+end
+
 function ArenaStockPanel:_createCard(container: Frame, index: number): Card
-	-- The entire card is a white circle. Avatar fills most of it.
+	-- Root card is transparent — visual elements are the avatar circle + text below.
 	local card = Instance.new("Frame")
 	card.Name = "Card" .. tostring(index)
-	card.Size = UDim2.new(0, CARD_SIZE, 0, CARD_SIZE)
-	card.BackgroundColor3 = RING_COLOR
-	card.BackgroundTransparency = 0
-	card.BorderSizePixel = 0
+	card.Size = UDim2.new(0, CARD_WIDTH, 0, CARD_HEIGHT)
+	card.BackgroundTransparency = 1
 	card.Visible = false
 	card.Parent = container
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0) -- full circle
-	corner.Parent = card
+	-- Avatar circle (white ring)
+	local avatarFrame = Instance.new("Frame")
+	avatarFrame.Name = "Avatar"
+	avatarFrame.AnchorPoint = Vector2.new(0.5, 0)
+	avatarFrame.Position = UDim2.new(0.5, 0, 0, 0)
+	avatarFrame.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
+	avatarFrame.BackgroundColor3 = RING_COLOR
+	avatarFrame.BorderSizePixel = 0
+	avatarFrame.Parent = card
+
+	local avatarCorner = Instance.new("UICorner")
+	avatarCorner.CornerRadius = UDim.new(1, 0)
+	avatarCorner.Parent = avatarFrame
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Thickness = 3
 	stroke.Color = LOCAL_BORDER
 	stroke.Enabled = false
-	stroke.Parent = card
+	stroke.Parent = avatarFrame
 
 	local avatar = Instance.new("ImageLabel")
-	avatar.Name = "Avatar"
-	avatar.Size = UDim2.new(1, -RING_INSET * 2, 1, -RING_INSET * 2)
-	avatar.Position = UDim2.new(0, RING_INSET, 0, RING_INSET)
+	avatar.Name = "AvatarImage"
+	avatar.Size = UDim2.new(1, -4, 1, -4)
+	avatar.Position = UDim2.new(0, 2, 0, 2)
 	avatar.BackgroundTransparency = 1
 	avatar.Image = PLACEHOLDER_IMAGE
 	avatar.ScaleType = Enum.ScaleType.Crop
-	avatar.Parent = card
+	avatar.Parent = avatarFrame
 
-	local avatarCorner = Instance.new("UICorner")
-	avatarCorner.CornerRadius = UDim.new(1, 0)
-	avatarCorner.Parent = avatar
+	local avatarImgCorner = Instance.new("UICorner")
+	avatarImgCorner.CornerRadius = UDim.new(1, 0)
+	avatarImgCorner.Parent = avatar
+
+	-- Damage text — big, tier-colored
+	local damageLabel = Instance.new("TextLabel")
+	damageLabel.Name = "Damage"
+	damageLabel.AnchorPoint = Vector2.new(0.5, 0)
+	damageLabel.Position = UDim2.new(0.5, 0, 0, AVATAR_SIZE + 4)
+	damageLabel.Size = UDim2.new(1, 0, 0, 16)
+	damageLabel.BackgroundTransparency = 1
+	damageLabel.Text = "0%"
+	damageLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	damageLabel.TextStrokeTransparency = 0.5
+	damageLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	damageLabel.TextSize = 15
+	damageLabel.Font = Enum.Font.GothamBold
+	damageLabel.Parent = card
+
+	-- Meta row — Lv + rank chip
+	local metaRow = Instance.new("Frame")
+	metaRow.Name = "Meta"
+	metaRow.AnchorPoint = Vector2.new(0.5, 0)
+	metaRow.Position = UDim2.new(0.5, 0, 0, AVATAR_SIZE + 22)
+	metaRow.Size = UDim2.new(1, 0, 0, 14)
+	metaRow.BackgroundTransparency = 1
+	metaRow.Parent = card
+
+	local metaLayout = Instance.new("UIListLayout")
+	metaLayout.FillDirection = Enum.FillDirection.Horizontal
+	metaLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	metaLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	metaLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	metaLayout.Padding = UDim.new(0, 4)
+	metaLayout.Parent = metaRow
+
+	local levelLabel = Instance.new("TextLabel")
+	levelLabel.Name = "Level"
+	levelLabel.LayoutOrder = 1
+	levelLabel.Size = UDim2.new(0, 28, 1, 0)
+	levelLabel.BackgroundTransparency = 1
+	levelLabel.Text = "Lv 1"
+	levelLabel.TextColor3 = Color3.fromRGB(220, 220, 230)
+	levelLabel.TextStrokeTransparency = 0.6
+	levelLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	levelLabel.TextSize = 10
+	levelLabel.Font = Enum.Font.GothamBold
+	levelLabel.TextXAlignment = Enum.TextXAlignment.Right
+	levelLabel.Parent = metaRow
+
+	-- Rank logo placeholder — swap Image to real rbxassetid quando assets forem upload
+	local rankLogo = Instance.new("ImageLabel")
+	rankLogo.Name = "RankLogo"
+	rankLogo.LayoutOrder = 2
+	rankLogo.Size = UDim2.new(0, 16, 0, 14)
+	rankLogo.BackgroundTransparency = 1
+	rankLogo.Image = PLACEHOLDER_IMAGE
+	rankLogo.ImageColor3 = RANK_TIER_COLORS.Unranked
+	rankLogo.ScaleType = Enum.ScaleType.Fit
+	rankLogo.Parent = metaRow
 
 	return {
 		frame = card,
 		avatarImage = avatar,
 		localStroke = stroke,
+		damageLabel = damageLabel,
+		levelLabel = levelLabel,
+		rankLogo = rankLogo,
 		userId = nil,
 		shattering = false,
 	}
@@ -89,9 +199,9 @@ function ArenaStockPanel:_build(parent: ScreenGui)
 	local container = Instance.new("Frame")
 	container.Name = "ArenaStockPanel"
 	container.AnchorPoint = Vector2.new(0.5, 1)
-	container.Position = UDim2.new(0.5, 0, 0.96, 0)
-	local totalWidth = CARD_SIZE * MAX_CARDS + CARD_GAP * (MAX_CARDS - 1)
-	container.Size = UDim2.new(0, totalWidth, 0, CARD_SIZE)
+	container.Position = UDim2.new(0.5, 0, 0.98, 0)
+	local totalWidth = CARD_WIDTH * MAX_CARDS + CARD_GAP * (MAX_CARDS - 1)
+	container.Size = UDim2.new(0, totalWidth, 0, CARD_HEIGHT)
 	container.BackgroundTransparency = 1
 	container.Visible = false
 	container.Parent = parent
@@ -99,7 +209,7 @@ function ArenaStockPanel:_build(parent: ScreenGui)
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Top
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Padding = UDim.new(0, CARD_GAP)
 	layout.Parent = container
@@ -160,10 +270,26 @@ function ArenaStockPanel:_applyCardData(card: Card, snap: ArenaPlayerSnapshot, i
 	card.userId = snap.userId
 	card.localStroke.Enabled = isLocal
 
-	-- Reset visual state (may have been faded by KO animation)
-	card.frame.BackgroundTransparency = 0
+	-- Reset visual state (shatter may have faded)
+	card.frame.Visible = true
 	card.avatarImage.ImageTransparency = 0
+	card.damageLabel.TextTransparency = 0
+	card.levelLabel.TextTransparency = 0
+	card.rankLogo.ImageTransparency = 0
 
+	-- Damage
+	local pct = math.floor(snap.damagePercent)
+	card.damageLabel.Text = string.format("%d%%", pct)
+	card.damageLabel.TextColor3 = damageTierColor(pct)
+
+	-- Level
+	card.levelLabel.Text = string.format("Lv%d", snap.level)
+
+	-- Rank logo (placeholder tintado com cor do tier; swap Image p/ rbxassetid real depois)
+	local rankName = snap.rank and snap.rank.name or "Unranked"
+	card.rankLogo.ImageColor3 = rankTierColor(rankName)
+
+	-- Avatar
 	if self._avatarCache[snap.userId] then
 		card.avatarImage.Image = self._avatarCache[snap.userId]
 	else
@@ -178,17 +304,17 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		return
 	end
 
-	-- Shatter: burst 8 fragments from card center, fade avatar + card
-	local cardAbsPos = card.frame.AbsolutePosition
-	local cardAbsSize = card.frame.AbsoluteSize
-	local centerX = cardAbsPos.X + cardAbsSize.X * 0.5
-	local centerY = cardAbsPos.Y + cardAbsSize.Y * 0.5
+	local avatarFrame = card.avatarImage.Parent :: Frame
+	local absPos = avatarFrame.AbsolutePosition
+	local absSize = avatarFrame.AbsoluteSize
+	local centerX = absPos.X + absSize.X * 0.5
+	local centerY = absPos.Y + absSize.Y * 0.5
 
 	local screenGui = card.frame:FindFirstAncestorOfClass("ScreenGui")
 
 	for i = 1, 8 do
 		local frag = Instance.new("Frame")
-		frag.Size = UDim2.new(0, 10, 0, 10)
+		frag.Size = UDim2.new(0, 9, 0, 9)
 		frag.AnchorPoint = Vector2.new(0.5, 0.5)
 		frag.Position = UDim2.new(0, centerX, 0, centerY)
 		frag.BackgroundColor3 = LOCAL_BORDER
@@ -200,7 +326,7 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		fragCorner.Parent = frag
 
 		local angle = (i - 1) * (math.pi * 2 / 8) + math.random() * 0.3
-		local distance = 60 + math.random(0, 30)
+		local distance = 55 + math.random(0, 25)
 		local targetX = centerX + math.cos(angle) * distance
 		local targetY = centerY + math.sin(angle) * distance
 
@@ -216,7 +342,6 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		end)
 	end
 
-	-- Hide avatar immediately while shatter plays, fade card after
 	card.avatarImage.ImageTransparency = 1
 	task.delay(0.4, function()
 		if not card.frame.Parent then
@@ -224,13 +349,13 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 			return
 		end
 		local fadeInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		TweenService:Create(card.frame, fadeInfo, { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(card.damageLabel, fadeInfo, { TextTransparency = 1 }):Play()
+		TweenService:Create(card.levelLabel, fadeInfo, { TextTransparency = 1 }):Play()
+		TweenService:Create(card.rankLogo, fadeInfo, { ImageTransparency = 1 }):Play()
 		task.delay(0.45, function()
 			if card.frame.Parent then
 				card.frame.Visible = false
 				card.userId = nil
-				card.frame.BackgroundTransparency = 0
-				card.avatarImage.ImageTransparency = 0
 			end
 			card.shattering = false
 		end)
@@ -243,7 +368,7 @@ function ArenaStockPanel:Update(players: { ArenaPlayerSnapshot }, localUserId: n
 		newIds[snap.userId] = true
 	end
 
-	-- Phase 1: trigger shatter for cards whose player disappeared (KO)
+	-- Phase 1: trigger shatter for cards whose player disappeared
 	for _, card in ipairs(self._cards) do
 		if card.userId and not newIds[card.userId] and card.frame.Visible and not card.shattering then
 			card.shattering = true
@@ -251,7 +376,7 @@ function ArenaStockPanel:Update(players: { ArenaPlayerSnapshot }, localUserId: n
 		end
 	end
 
-	-- Phase 2: identify continuing vs available cards
+	-- Phase 2: split cards into continuing vs available
 	local continuingByUserId = {} :: { [number]: Card }
 	local availableCards = {} :: { Card }
 	for _, card in ipairs(self._cards) do
@@ -264,7 +389,7 @@ function ArenaStockPanel:Update(players: { ArenaPlayerSnapshot }, localUserId: n
 		end
 	end
 
-	-- Phase 3: apply snapshots — continuing players stay on their card, new players take next available
+	-- Phase 3: apply snapshots to cards
 	local count = math.min(#players, MAX_CARDS)
 	for i = 1, count do
 		local snap = players[i]
@@ -275,11 +400,10 @@ function ArenaStockPanel:Update(players: { ArenaPlayerSnapshot }, localUserId: n
 		end
 		if card then
 			self:_applyCardData(card, snap, isLocal)
-			card.frame.Visible = true
 		end
 	end
 
-	-- Phase 4: hide remaining unused cards
+	-- Phase 4: hide leftover cards
 	for _, card in ipairs(availableCards) do
 		card.frame.Visible = false
 		card.userId = nil
