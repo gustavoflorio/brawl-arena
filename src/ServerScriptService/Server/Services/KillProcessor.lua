@@ -93,8 +93,7 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	local puncherBrief = rankService:GetRankBrief(puncher)
 	local targetBrief = rankService:GetRankBrief(target)
 
-	local bonus = rankService:ComputeXPBonus(puncherBrief.tier, targetBrief.tier)
-	local totalXP = math.max(0, Constants.XP.Base + bonus)
+	local totalXP = rankService:ComputeXPGain(puncherBrief.tier, targetBrief.tier)
 
 	playerData:AddKill(puncher)
 	playerData:AddDeath(target)
@@ -110,8 +109,8 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	local newLevel, _, leveledUp = playerData:AddXP(puncher, totalXP)
 	local previousLevelPuncher = newLevel - (leveledUp and 1 or 0)
 
-	local puncherRankDelta = rankService:ApplyKillDelta(puncher)
-	local targetRankDelta = rankService:ApplyDeathDelta(target)
+	local puncherRankDelta = rankService:ApplyKillDelta(puncher, targetBrief.tier)
+	local targetRankDelta = rankService:ApplyDeathDelta(target, puncherBrief.tier)
 
 	self:_broadcast(Constants.EventTypes.KillFeed, {
 		puncher = { name = puncher.Name, userId = puncher.UserId, rank = puncherBrief },

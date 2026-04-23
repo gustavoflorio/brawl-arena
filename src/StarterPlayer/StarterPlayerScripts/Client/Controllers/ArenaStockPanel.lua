@@ -23,6 +23,15 @@ local RANK_TIER_COLORS = {
 	Champion = Color3.fromRGB(255, 90, 90),
 }
 
+local RANK_ICON_IDS = {
+	Bronze = "rbxassetid://95221352287862",
+	Silver = "rbxassetid://87829525424272",
+	Gold = "rbxassetid://90669385414264",
+	Platinum = "rbxassetid://128268020488699",
+	Diamond = "rbxassetid://78191016954660",
+	Champion = "rbxassetid://83852817358288",
+}
+
 type ArenaPlayerSnapshot = {
 	userId: number,
 	displayName: string,
@@ -82,6 +91,23 @@ local function rankTierColor(rankName: string): Color3
 		return RANK_TIER_COLORS.Champion
 	end
 	return RANK_TIER_COLORS.Unranked
+end
+
+local function rankIconId(rankName: string): string?
+	if string.find(rankName, "Bronze") then
+		return RANK_ICON_IDS.Bronze
+	elseif string.find(rankName, "Silver") then
+		return RANK_ICON_IDS.Silver
+	elseif string.find(rankName, "Gold") then
+		return RANK_ICON_IDS.Gold
+	elseif string.find(rankName, "Platinum") then
+		return RANK_ICON_IDS.Platinum
+	elseif string.find(rankName, "Diamond") then
+		return RANK_ICON_IDS.Diamond
+	elseif string.find(rankName, "Champion") then
+		return RANK_ICON_IDS.Champion
+	end
+	return nil
 end
 
 function ArenaStockPanel:_createCard(container: Frame, index: number): Card
@@ -172,7 +198,6 @@ function ArenaStockPanel:_createCard(container: Frame, index: number): Card
 	levelLabel.TextXAlignment = Enum.TextXAlignment.Right
 	levelLabel.Parent = metaRow
 
-	-- Rank logo placeholder — swap Image to real rbxassetid quando assets forem upload
 	local rankLogo = Instance.new("ImageLabel")
 	rankLogo.Name = "RankLogo"
 	rankLogo.LayoutOrder = 2
@@ -285,9 +310,15 @@ function ArenaStockPanel:_applyCardData(card: Card, snap: ArenaPlayerSnapshot, i
 	-- Level
 	card.levelLabel.Text = string.format("Lv%d", snap.level)
 
-	-- Rank logo (placeholder tintado com cor do tier; swap Image p/ rbxassetid real depois)
 	local rankName = snap.rank and snap.rank.name or "Unranked"
-	card.rankLogo.ImageColor3 = rankTierColor(rankName)
+	local iconId = rankIconId(rankName)
+	if iconId then
+		card.rankLogo.Image = iconId
+		card.rankLogo.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		card.rankLogo.Image = PLACEHOLDER_IMAGE
+		card.rankLogo.ImageColor3 = RANK_TIER_COLORS.Unranked
+	end
 
 	-- Avatar
 	if self._avatarCache[snap.userId] then

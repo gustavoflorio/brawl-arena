@@ -44,20 +44,50 @@ local function resolveBoardDisplay(mode: string): BasePart?
 	return nil
 end
 
+local RANK_ICON_IDS = {
+	Bronze = "rbxassetid://95221352287862",
+	Silver = "rbxassetid://87829525424272",
+	Gold = "rbxassetid://90669385414264",
+	Platinum = "rbxassetid://128268020488699",
+	Diamond = "rbxassetid://78191016954660",
+	Champion = "rbxassetid://83852817358288",
+}
+
+local function tierNameFromPoints(points: number): string
+	local matched = Constants.Rank.Tiers[1].name
+	for _, tier in ipairs(Constants.Rank.Tiers) do
+		if points >= tier.threshold then
+			matched = tier.name
+		else
+			break
+		end
+	end
+	return matched
+end
+
+local function rankIconForPoints(points: number): string?
+	local name = tierNameFromPoints(points)
+	if string.find(name, "Bronze") then
+		return RANK_ICON_IDS.Bronze
+	elseif string.find(name, "Silver") then
+		return RANK_ICON_IDS.Silver
+	elseif string.find(name, "Gold") then
+		return RANK_ICON_IDS.Gold
+	elseif string.find(name, "Platinum") then
+		return RANK_ICON_IDS.Platinum
+	elseif string.find(name, "Diamond") then
+		return RANK_ICON_IDS.Diamond
+	elseif string.find(name, "Champion") then
+		return RANK_ICON_IDS.Champion
+	end
+	return nil
+end
+
 local function formatScore(mode: string, score: number): string
 	local display = Constants.Ranking.ModeDisplay[mode]
 	local suffix = display and display.scoreSuffix or ""
-	if mode == Constants.Ranking.Modes.TimeAlive then
-		local seconds = score
-		local hours = math.floor(seconds / 3600)
-		local mins = math.floor((seconds % 3600) / 60)
-		local secs = seconds % 60
-		if hours > 0 then
-			return string.format("%dh %02dm", hours, mins)
-		elseif mins > 0 then
-			return string.format("%dm %02ds", mins, secs)
-		end
-		return string.format("%ds", secs)
+	if mode == Constants.Ranking.Modes.MMR then
+		return string.format("%d", score)
 	end
 	return string.format("%d%s", score, suffix)
 end
@@ -218,16 +248,26 @@ function RankingService:_renderBoard(mode: string, entries: { Entry })
 		rowCorner.CornerRadius = UDim.new(0, 6)
 		rowCorner.Parent = row
 
-		local rankLabel = Instance.new("TextLabel")
-		rankLabel.Size = UDim2.new(0, 60, 1, 0)
-		rankLabel.Position = UDim2.new(0, 10, 0, 0)
-		rankLabel.BackgroundTransparency = 1
-		rankLabel.Text = string.format("#%d", idx)
-		rankLabel.TextColor3 = idx <= 3 and accent or Color3.fromRGB(200, 200, 220)
-		rankLabel.TextScaled = true
-		rankLabel.Font = Enum.Font.GothamBlack
-		rankLabel.TextXAlignment = Enum.TextXAlignment.Left
-		rankLabel.Parent = row
+		if mode == Constants.Ranking.Modes.MMR then
+			local iconLabel = Instance.new("ImageLabel")
+			iconLabel.Size = UDim2.new(0, 42, 0, 42)
+			iconLabel.Position = UDim2.new(0, 14, 0.5, -21)
+			iconLabel.BackgroundTransparency = 1
+			iconLabel.Image = rankIconForPoints(entry.score) or "rbxasset://textures/ui/GuiImagePlaceholder.png"
+			iconLabel.ScaleType = Enum.ScaleType.Fit
+			iconLabel.Parent = row
+		else
+			local rankLabel = Instance.new("TextLabel")
+			rankLabel.Size = UDim2.new(0, 60, 1, 0)
+			rankLabel.Position = UDim2.new(0, 10, 0, 0)
+			rankLabel.BackgroundTransparency = 1
+			rankLabel.Text = string.format("#%d", idx)
+			rankLabel.TextColor3 = idx <= 3 and accent or Color3.fromRGB(200, 200, 220)
+			rankLabel.TextScaled = true
+			rankLabel.Font = Enum.Font.GothamBlack
+			rankLabel.TextXAlignment = Enum.TextXAlignment.Left
+			rankLabel.Parent = row
+		end
 
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Size = UDim2.new(1, -230, 1, 0)
@@ -313,7 +353,7 @@ function RankingService:SubmitForPlayer(player: Player)
 	end
 	self:SubmitScore(player, Constants.Ranking.Modes.Level, profile.Level)
 	self:SubmitScore(player, Constants.Ranking.Modes.Kills, profile.TotalKills)
-	self:SubmitScore(player, Constants.Ranking.Modes.TimeAlive, math.floor(profile.TotalTimeAlive))
+	self:SubmitScore(player, Constants.Ranking.Modes.MMR, profile.RankPoints)
 end
 
 return RankingService

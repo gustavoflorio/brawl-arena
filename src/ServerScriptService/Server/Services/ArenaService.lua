@@ -254,11 +254,8 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 		killer = self:_resolveKillAttribution(player)
 	end
 
-	if wasInArena and services and services.PlayerDataService and arenaDuration > 0 then
-		services.PlayerDataService:AddTimeAlive(player, arenaDuration)
-		if services.RankingService then
-			services.RankingService:SubmitForPlayer(player)
-		end
+	if wasInArena and services and services.RankingService then
+		services.RankingService:SubmitForPlayer(player)
 	end
 
 	if killer and services and services.KillProcessor then
@@ -460,7 +457,6 @@ function ArenaService:_watchOutOfBounds()
 end
 
 -- Passive XP drip removido: XP agora vem apenas de kills (via KillProcessor).
--- TotalTimeAlive continua sendo rastreado em ReturnToLobby pra alimentar o leaderboard.
 
 local function setCharacterCollisionGroup(character: Model, groupName: string)
 	for _, descendant in ipairs(character:GetDescendants()) do

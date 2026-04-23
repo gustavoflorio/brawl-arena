@@ -21,7 +21,7 @@ function Rank.getColor(tier: number): Color3
 		return GOLD
 	elseif tier <= 13 then
 		return PLATINUM
-	elseif tier == 14 then
+	elseif tier <= 16 then
 		return DIAMOND
 	end
 	return CHAMPION

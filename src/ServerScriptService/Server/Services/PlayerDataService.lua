@@ -23,7 +23,6 @@ local PROFILE_TEMPLATE: Profile = {
 	HighestRank = "Unranked",
 	TotalKills = 0,
 	TotalDeaths = 0,
-	TotalTimeAlive = 0,
 	DonationCount = 0,
 	LastLoginTimestamp = 0,
 }
@@ -35,7 +34,8 @@ PlayerDataService._profiles = {} :: { [Player]: any }
 PlayerDataService._loadedSignals = {} :: { [Player]: { [(any) -> ()]: boolean } }
 
 local function xpForLevelUp(level: number): number
-	return math.floor(Constants.XP.LevelCurveMultiplier * (level ^ Constants.XP.LevelCurveExponent))
+	local exponent = Constants.XP.LevelCurveExponent + level * Constants.XP.LevelCurveExponentGrowth
+	return math.floor(Constants.XP.LevelCurveMultiplier * (level ^ exponent))
 end
 
 function PlayerDataService:Init(services: Services)
@@ -167,14 +167,6 @@ function PlayerDataService:AddDeath(player: Player)
 		return
 	end
 	data.TotalDeaths += 1
-end
-
-function PlayerDataService:AddTimeAlive(player: Player, seconds: number)
-	local data = self:GetProfile(player)
-	if not data or seconds <= 0 then
-		return
-	end
-	data.TotalTimeAlive += seconds
 end
 
 function PlayerDataService:IncrementDonation(player: Player)

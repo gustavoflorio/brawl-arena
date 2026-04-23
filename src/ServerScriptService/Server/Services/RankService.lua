@@ -28,10 +28,35 @@ function RankService:GetTier(rankPoints: number): (number, string)
 	return matchedIdx, matchedName
 end
 
-function RankService:ComputeXPBonus(puncherTier: number, targetTier: number): number
-	local diff = targetTier - puncherTier
-	local bonus = diff * Constants.XP.MMRMultiplier
-	return math.clamp(bonus, Constants.XP.BonusClampMin, Constants.XP.BonusClampMax)
+function RankService:ComputeXPGain(puncherTier: number, targetTier: number): number
+	local diff = math.max(0, targetTier - puncherTier)
+	local multiplier = 1 + diff * Constants.XP.TierBonusPercent
+	return math.ceil(Constants.XP.Base * multiplier)
+end
+
+function RankService:GetDivision(tierIdx: number): number
+	if tierIdx <= 1 then
+		return 0
+	elseif tierIdx <= 4 then
+		return 1
+	elseif tierIdx <= 7 then
+		return 2
+	elseif tierIdx <= 10 then
+		return 3
+	elseif tierIdx <= 13 then
+		return 4
+	elseif tierIdx <= 16 then
+		return 5
+	end
+	return 6
+end
+
+function RankService:ComputeRankPointsDeltas(puncherTier: number, targetTier: number): (number, number)
+	local diff = self:GetDivision(targetTier) - self:GetDivision(puncherTier)
+	local multiplier = 1 + diff * Constants.Rank.DivisionBonusPercent
+	local killerGain = math.ceil(Constants.Rank.PointsPerKill * multiplier)
+	local targetLoss = math.ceil(Constants.Rank.PointsLostPerDeath * multiplier)
+	return killerGain, targetLoss
 end
 
 function RankService:GetRankBrief(player: Player): { name: string, tier: number }
@@ -77,12 +102,16 @@ function RankService:ApplyPointsDelta(player: Player, delta: number): RankDeltaR
 	}
 end
 
-function RankService:ApplyKillDelta(player: Player): RankDeltaResult?
-	return self:ApplyPointsDelta(player, Constants.Rank.PointsPerKill)
+function RankService:ApplyKillDelta(player: Player, targetTier: number): RankDeltaResult?
+	local brief = self:GetRankBrief(player)
+	local gain, _ = self:ComputeRankPointsDeltas(brief.tier, targetTier)
+	return self:ApplyPointsDelta(player, gain)
 end
 
-function RankService:ApplyDeathDelta(player: Player): RankDeltaResult?
-	return self:ApplyPointsDelta(player, -Constants.Rank.PointsLostPerDeath)
+function RankService:ApplyDeathDelta(player: Player, puncherTier: number): RankDeltaResult?
+	local brief = self:GetRankBrief(player)
+	local _, loss = self:ComputeRankPointsDeltas(puncherTier, brief.tier)
+	return self:ApplyPointsDelta(player, -loss)
 end
 
 return RankService

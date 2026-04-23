@@ -8,7 +8,6 @@ export type Profile = {
 	HighestRank: string,
 	TotalKills: number,
 	TotalDeaths: number,
-	TotalTimeAlive: number,
 	DonationCount: number,
 	LastLoginTimestamp: number,
 }
