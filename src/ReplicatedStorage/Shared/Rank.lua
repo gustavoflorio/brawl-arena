@@ -34,4 +34,33 @@ function Rank.format(brief: { name: string, tier: number }?): (string, Color3)
 	return brief.name, Rank.getColor(brief.tier)
 end
 
+-- Ícones do rank por divisão. Mesmos asset IDs usados no ranking board
+-- (RankingService.RANK_ICON_IDS) — single source quando possível.
+-- Unranked é explicitamente nil — caller deve esconder o ImageLabel nesse caso.
+local RANK_ICONS = {
+	Bronze = "rbxassetid://95221352287862",
+	Silver = "rbxassetid://87829525424272",
+	Gold = "rbxassetid://90669385414264",
+	Platinum = "rbxassetid://128268020488699",
+	Diamond = "rbxassetid://78191016954660",
+	Champion = "rbxassetid://83852817358288",
+}
+
+function Rank.getIconAsset(tier: number): string?
+	if tier <= 1 then
+		return nil
+	elseif tier <= 4 then
+		return RANK_ICONS.Bronze
+	elseif tier <= 7 then
+		return RANK_ICONS.Silver
+	elseif tier <= 10 then
+		return RANK_ICONS.Gold
+	elseif tier <= 13 then
+		return RANK_ICONS.Platinum
+	elseif tier <= 16 then
+		return RANK_ICONS.Diamond
+	end
+	return RANK_ICONS.Champion
+end
+
 return Rank

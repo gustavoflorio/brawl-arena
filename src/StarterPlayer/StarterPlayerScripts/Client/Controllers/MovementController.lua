@@ -173,6 +173,16 @@ local function resolveFacingVector(root: BasePart, humanoid: Humanoid?): Vector3
 	return Vector3.new(1, 0, 0)
 end
 
+function MovementController:TryJump()
+	-- Entry point para controles mobile custom (D-Pad up). Mantém a mesma
+	-- lógica de single/double jump do keybind W sem depender de InputObject.
+	self:_handleJump("MobileJump", Enum.UserInputState.Begin, (nil :: any) :: InputObject)
+end
+
+function MovementController:TryDodge()
+	self:_handleDodge("MobileDodge", Enum.UserInputState.Begin, (nil :: any) :: InputObject)
+end
+
 function MovementController:_handleJump(_name: string, inputState: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
 	if inputState ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Sink

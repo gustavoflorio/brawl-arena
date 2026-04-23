@@ -18,18 +18,17 @@ local function pickColor(damage: number): Color3
 end
 
 local function createLabel(character: Model): BillboardGui
-	local head = character:WaitForChild("Head", 5) :: Instance?
-	if not head then
-		head = character:WaitForChild("HumanoidRootPart", 5)
-	end
+	-- Adornee no HRP (estável mesmo durante flip do double jump e roll do dodge);
+	-- usar Head fazia o label seguir a part rotacionada pela animation, virando junto.
+	local hrp = character:WaitForChild("HumanoidRootPart", 5) :: Instance?
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "BrawlDamageLabel"
 	gui.Size = UDim2.new(0, 90, 0, 32)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, 2.5, 0)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 4, 0)
 	gui.AlwaysOnTop = true
 	gui.LightInfluence = 0
 	gui.MaxDistance = 120
-	gui.Adornee = head
+	gui.Adornee = hrp
 	gui.Enabled = false
 	gui.Parent = character
 

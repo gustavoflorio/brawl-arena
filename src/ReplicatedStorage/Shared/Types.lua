@@ -6,6 +6,9 @@ export type Profile = {
 	Rank: string,
 	RankPoints: number,
 	HighestRank: string,
+	SeriesKind: string,
+	SeriesProgress: number,
+	RankSchemaVersion: number,
 	TotalKills: number,
 	TotalDeaths: number,
 	DonationCount: number,
@@ -72,12 +75,18 @@ export type BrawlStateSnapshot = {
 	summary: SessionSummary?,
 }
 
+export type SeriesState = {
+	kind: string,
+	progress: number,
+}
+
 export type ArenaPlayerSnapshot = {
 	userId: number,
 	displayName: string,
 	damagePercent: number,
 	level: number,
 	rank: RankBrief,
+	series: SeriesState?,
 }
 
 export type ArenaStateSnapshot = {
@@ -90,6 +99,7 @@ export type SessionSummary = {
 	xpGained: number,
 	leveledUp: boolean,
 	newLevel: number?,
+	rankDelta: number?,
 }
 
 return {}

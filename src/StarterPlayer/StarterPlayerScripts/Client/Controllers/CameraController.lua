@@ -14,9 +14,26 @@ local player = Players.LocalPlayer
 local CameraController = {}
 CameraController._connection = nil :: RBXScriptConnection?
 CameraController._currentState = Constants.PlayerState.InLobby
+CameraController._camPos = Vector3.zero
+CameraController._lookPos = Vector3.zero
+CameraController._lookAheadX = 0
+CameraController._anchorX = 0
 
 local CAMERA_DISTANCE = 40
 local CAMERA_HEIGHT = 6
+local FOLLOW_RATE = 8 -- exponential damping; maior = mais responsivo, menor = mais laggy
+local LOOK_AHEAD_FACTOR = 0.25 -- studs de offset por unit/s de velocidade horizontal
+local LOOK_AHEAD_MAX = 7 -- cap pra não desorientar
+local LOOK_AHEAD_RATE = 3 -- damping próprio do offset; menor = transição de direção mais suave
+local DEADZONE_X = 4 -- studs; player pode se mexer ±4 sem puxar a câmera
+
+local function damp(current: number, target: number, rate: number, dt: number): number
+	return current + (target - current) * (1 - math.exp(-rate * dt))
+end
+
+local function dampV(current: Vector3, target: Vector3, rate: number, dt: number): Vector3
+	return current:Lerp(target, 1 - math.exp(-rate * dt))
+end
 
 local function getRoot(): BasePart?
 	local character = player.Character
@@ -51,15 +68,46 @@ function CameraController:_enterArenaCamera()
 	if not camera then
 		return
 	end
+
+	-- Snap inicial pra não lerpar do (0,0,0) no primeiro frame.
+	local root = getRoot()
+	if root then
+		local rootPos = root.Position
+		self._camPos = Vector3.new(rootPos.X, rootPos.Y + CAMERA_HEIGHT, CAMERA_DISTANCE)
+		self._lookPos = Vector3.new(rootPos.X, rootPos.Y + CAMERA_HEIGHT * 0.25, 0)
+		self._anchorX = rootPos.X
+	end
+	self._lookAheadX = 0
+
 	camera.CameraType = Enum.CameraType.Scriptable
-	self._connection = RunService.RenderStepped:Connect(function()
-		local root = getRoot()
-		if not root then
+	self._connection = RunService.RenderStepped:Connect(function(dt)
+		local r = getRoot()
+		if not r then
 			return
 		end
-		local targetPos = Vector3.new(root.Position.X, root.Position.Y + CAMERA_HEIGHT * 0.25, 0)
-		local camPos = Vector3.new(root.Position.X, root.Position.Y + CAMERA_HEIGHT, CAMERA_DISTANCE)
-		camera.CFrame = CFrame.new(camPos, targetPos)
+		local rootPos = r.Position
+
+		-- Deadzone X: anchor só se move quando o player sai dos ±DEADZONE_X.
+		-- Pulinhos pequenos pros lados não puxam a câmera; só movimento real.
+		local distFromAnchor = rootPos.X - self._anchorX
+		if distFromAnchor > DEADZONE_X then
+			self._anchorX = rootPos.X - DEADZONE_X
+		elseif distFromAnchor < -DEADZONE_X then
+			self._anchorX = rootPos.X + DEADZONE_X
+		end
+
+		local velX = r.AssemblyLinearVelocity.X
+		local desiredLookAhead = math.clamp(velX * LOOK_AHEAD_FACTOR, -LOOK_AHEAD_MAX, LOOK_AHEAD_MAX)
+		self._lookAheadX = damp(self._lookAheadX, desiredLookAhead, LOOK_AHEAD_RATE, dt)
+
+		local focusX = self._anchorX + self._lookAheadX
+		local desiredCamPos = Vector3.new(focusX, rootPos.Y + CAMERA_HEIGHT, CAMERA_DISTANCE)
+		local desiredLookPos = Vector3.new(focusX, rootPos.Y + CAMERA_HEIGHT * 0.25, 0)
+
+		self._camPos = dampV(self._camPos, desiredCamPos, FOLLOW_RATE, dt)
+		self._lookPos = dampV(self._lookPos, desiredLookPos, FOLLOW_RATE, dt)
+
+		camera.CFrame = CFrame.new(self._camPos, self._lookPos)
 	end)
 end
 

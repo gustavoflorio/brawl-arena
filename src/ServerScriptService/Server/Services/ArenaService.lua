@@ -19,6 +19,7 @@ type PlayerState = {
 	killsSinceEnter: number,
 	xpSinceEnter: number,
 	lastLevelSnapshot: number,
+	lastRankPointsSnapshot: number,
 }
 
 local ArenaService = {}
@@ -104,6 +105,7 @@ function ArenaService:_ensureState(player: Player): PlayerState
 		killsSinceEnter = 0,
 		xpSinceEnter = 0,
 		lastLevelSnapshot = 1,
+		lastRankPointsSnapshot = 0,
 	}
 	self._playerStates[player] = newState
 	return newState
@@ -208,6 +210,7 @@ function ArenaService:TeleportToArena(player: Player)
 	if services then
 		local profile = services.PlayerDataService and services.PlayerDataService:GetProfile(player)
 		state.lastLevelSnapshot = profile and profile.Level or 1
+		state.lastRankPointsSnapshot = profile and profile.RankPoints or 0
 		if services.AnalyticsService then
 			services.AnalyticsService:Log(Constants.Analytics.Events.EnterArena, {
 				userId = player.UserId,
@@ -304,12 +307,14 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 	end
 
 	local profile = services and services.PlayerDataService and services.PlayerDataService:GetProfile(player)
+	local rankDelta = profile and (profile.RankPoints - state.lastRankPointsSnapshot) or 0
 	local summary: { [string]: any } = {
 		kills = state.killsSinceEnter,
 		timeAliveSeconds = math.floor(arenaDuration),
 		xpGained = state.xpSinceEnter,
 		leveledUp = profile and profile.Level > state.lastLevelSnapshot or false,
 		newLevel = profile and profile.Level or nil,
+		rankDelta = rankDelta,
 	}
 
 	self:PublishState(player, summary)
@@ -369,12 +374,20 @@ function ArenaService:_collectArenaSnapshot(): { [string]: any }
 			if not rank then
 				rank = { name = "Unranked", tier = 1 }
 			end
+			local series = nil
+			if profile and profile.SeriesKind and profile.SeriesKind ~= "none" then
+				series = {
+					kind = profile.SeriesKind,
+					progress = profile.SeriesProgress or 0,
+				}
+			end
 			table.insert(players, {
 				userId = player.UserId,
 				displayName = player.DisplayName,
 				damagePercent = state.damagePercent,
 				level = profile and profile.Level or 1,
 				rank = rank,
+				series = series,
 			})
 		end
 	end
@@ -497,6 +510,10 @@ function ArenaService:_onPlayerAdded(player: Player)
 		local services = self._services :: Services?
 		if services and services.KillProcessor then
 			services.KillProcessor:ResetStreak(player)
+		end
+
+		if services and services.PlayerDataService and type(services.PlayerDataService.SyncOverheadAttributes) == "function" then
+			services.PlayerDataService:SyncOverheadAttributes(player)
 		end
 
 		task.defer(function()

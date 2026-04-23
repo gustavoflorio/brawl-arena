@@ -12,12 +12,104 @@ local Rank = require(sharedFolder:WaitForChild("Rank"))
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+local PROMO_COLOR = Color3.fromRGB(80, 220, 120)
+local DEMOTE_COLOR = Color3.fromRGB(220, 80, 80)
+local NEUTRAL_COLOR = Color3.fromRGB(255, 220, 120)
+
 local RankUpController = {}
 RankUpController._banner = nil :: Frame?
 RankUpController._title = nil :: TextLabel?
 RankUpController._subtitle = nil :: TextLabel?
+RankUpController._activeKey = 0
 
 function RankUpController:Init(_controllers: { [string]: any }) end
+
+function RankUpController:_showBanner(titleText: string, titleColor: Color3, subtitleText: string, holdSeconds: number)
+	if not self._banner or not self._title or not self._subtitle then
+		return
+	end
+	local key = self._activeKey + 1
+	self._activeKey = key
+
+	self._title.Text = titleText
+	self._title.TextColor3 = titleColor
+	self._subtitle.Text = subtitleText
+
+	self._banner.BackgroundTransparency = 0.1
+	self._title.TextTransparency = 0
+	self._subtitle.TextTransparency = 0
+
+	task.delay(holdSeconds, function()
+		if not self._banner or self._activeKey ~= key then
+			return
+		end
+		local fade = TweenInfo.new(0.4)
+		TweenService:Create(self._banner, fade, { BackgroundTransparency = 1 }):Play()
+		if self._title then
+			TweenService:Create(self._title, fade, { TextTransparency = 1 }):Play()
+		end
+		if self._subtitle then
+			TweenService:Create(self._subtitle, fade, { TextTransparency = 1 }):Play()
+		end
+	end)
+end
+
+function RankUpController:_handleRankUp(payload: any)
+	if typeof(payload) ~= "table" or payload.userId ~= player.UserId then
+		return
+	end
+	local promoted = payload.promoted == true
+	local newRank = payload.newRank
+	local previousRank = payload.previousRank
+	if typeof(newRank) ~= "table" or typeof(previousRank) ~= "table" then
+		return
+	end
+	local newName, newColor = Rank.format(newRank)
+	local titleText = promoted and ("PROMOTED: " .. newName) or ("DEMOTED: " .. newName)
+	local subtitleText = promoted
+		and string.format("You climbed from %s to %s", previousRank.name, newName)
+		or string.format("You fell from %s to %s", previousRank.name, newName)
+	self:_showBanner(titleText, newColor, subtitleText, 2.5)
+end
+
+function RankUpController:_handleSeriesEvent(payload: any)
+	if typeof(payload) ~= "table" or payload.userId ~= player.UserId then
+		return
+	end
+	local kind = payload.kind
+	local currentTier = payload.currentTier or "?"
+	local targetTier = payload.targetTier or "?"
+
+	if kind == "promo_started" then
+		self:_showBanner(
+			"PROMOTION SERIES",
+			PROMO_COLOR,
+			string.format("Win 3 in a row to reach %s", targetTier),
+			2.5
+		)
+	elseif kind == "demote_started" then
+		self:_showBanner(
+			"DEMOTION SERIES",
+			DEMOTE_COLOR,
+			string.format("Survive 3 deaths or fall to %s", targetTier),
+			2.5
+		)
+	elseif kind == "promo_failed" then
+		self:_showBanner(
+			"PROMOTION FAILED",
+			DEMOTE_COLOR,
+			string.format("Stayed in %s", currentTier),
+			2.0
+		)
+	elseif kind == "demote_broken" then
+		self:_showBanner(
+			"DEMOTION ESCAPED",
+			PROMO_COLOR,
+			string.format("Recovered in %s", currentTier),
+			2.0
+		)
+	end
+end
 
 function RankUpController:Start()
 	local gui = Instance.new("ScreenGui")
@@ -44,7 +136,7 @@ function RankUpController:Start()
 	title.Position = UDim2.new(0, 12, 0, 8)
 	title.BackgroundTransparency = 1
 	title.Text = ""
-	title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	title.TextColor3 = NEUTRAL_COLOR
 	title.TextScaled = true
 	title.Font = Enum.Font.GothamBlack
 	title.TextTransparency = 1
@@ -70,45 +162,14 @@ function RankUpController:Start()
 		return
 	end
 	remote.OnClientEvent:Connect(function(event)
-		if typeof(event) ~= "table" or event.type ~= Constants.EventTypes.RankUp then
+		if typeof(event) ~= "table" then
 			return
 		end
-		local payload = event.payload
-		if typeof(payload) ~= "table" or payload.userId ~= player.UserId then
-			return
+		if event.type == Constants.EventTypes.RankUp then
+			self:_handleRankUp(event.payload)
+		elseif event.type == Constants.EventTypes.SeriesEvent then
+			self:_handleSeriesEvent(event.payload)
 		end
-		if not self._banner or not self._title or not self._subtitle then
-			return
-		end
-		local promoted = payload.promoted == true
-		local newRank = payload.newRank
-		local previousRank = payload.previousRank
-		if typeof(newRank) ~= "table" or typeof(previousRank) ~= "table" then
-			return
-		end
-		local newName, newColor = Rank.format(newRank)
-		self._title.Text = promoted and ("PROMOÇÃO: " .. newName) or ("DEMOÇÃO: " .. newName)
-		self._title.TextColor3 = newColor
-		self._subtitle.Text = promoted
-			and string.format("Você subiu de %s pra %s", previousRank.name, newName)
-			or string.format("Você caiu de %s pra %s", previousRank.name, newName)
-
-		self._banner.BackgroundTransparency = 0.1
-		self._title.TextTransparency = 0
-		self._subtitle.TextTransparency = 0
-		task.delay(2.5, function()
-			if not self._banner then
-				return
-			end
-			local fade = TweenInfo.new(0.4)
-			TweenService:Create(self._banner, fade, { BackgroundTransparency = 1 }):Play()
-			if self._title then
-				TweenService:Create(self._title, fade, { TextTransparency = 1 }):Play()
-			end
-			if self._subtitle then
-				TweenService:Create(self._subtitle, fade, { TextTransparency = 1 }):Play()
-			end
-		end)
 	end)
 end
 

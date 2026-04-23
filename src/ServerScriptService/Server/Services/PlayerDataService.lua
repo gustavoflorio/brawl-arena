@@ -21,11 +21,31 @@ local PROFILE_TEMPLATE: Profile = {
 	Rank = "Unranked",
 	RankPoints = 0,
 	HighestRank = "Unranked",
+	SeriesKind = "none",
+	SeriesProgress = 0,
+	RankSchemaVersion = 0, -- migration bumps to 2 on load; novos profiles também passam por migração (no-op)
 	TotalKills = 0,
 	TotalDeaths = 0,
 	DonationCount = 0,
 	LastLoginTimestamp = 0,
 }
+
+local CURRENT_RANK_SCHEMA = 2
+
+local function migrateRankSchema(data)
+	if (data.RankSchemaVersion or 0) >= CURRENT_RANK_SCHEMA then
+		return
+	end
+	-- v0/v1 → v2: thresholds antigos eram variáveis (Bronze I=100, Bronze II=250, ..., Champion=10000).
+	-- Novo schema usa 100 FP por tier uniforme + séries de promo/demote, então RankPoints antigos
+	-- não traduzem. Reset everyone fair start.
+	data.RankPoints = 0
+	data.Rank = "Unranked"
+	data.HighestRank = "Unranked"
+	data.SeriesKind = "none"
+	data.SeriesProgress = 0
+	data.RankSchemaVersion = CURRENT_RANK_SCHEMA
+end
 
 local PlayerDataService = {}
 PlayerDataService._services = nil :: Services?
@@ -83,6 +103,7 @@ function PlayerDataService:_loadProfile(player: Player)
 
 	profile:AddUserId(player.UserId)
 	profile:Reconcile()
+	migrateRankSchema(profile.Data)
 	profile:ListenToRelease(function()
 		self._profiles[player] = nil
 		if player.Parent == Players then
@@ -150,6 +171,10 @@ function PlayerDataService:AddXP(player: Player, amount: number): (number, numbe
 		leveledUp = true
 	end
 
+	if leveledUp and data.Level ~= previousLevel then
+		self:SyncOverheadAttributes(player)
+	end
+
 	return data.Level, data.XP, leveledUp and data.Level ~= previousLevel
 end
 
@@ -185,6 +210,15 @@ function PlayerDataService:SetRankPoints(player: Player, points: number)
 	data.RankPoints = math.max(0, points)
 end
 
+function PlayerDataService:SetSeriesState(player: Player, kind: string, progress: number)
+	local data = self:GetProfile(player)
+	if not data then
+		return
+	end
+	data.SeriesKind = kind
+	data.SeriesProgress = math.clamp(progress, 0, 99)
+end
+
 function PlayerDataService:SetRankName(player: Player, rankName: string)
 	local data = self:GetProfile(player)
 	if not data then
@@ -203,6 +237,29 @@ function PlayerDataService:SetRankName(player: Player, rankName: string)
 	end
 	if newIdx > highestIdx then
 		data.HighestRank = rankName
+	end
+end
+
+function PlayerDataService:SyncOverheadAttributes(player: Player)
+	-- Propaga Level e Rank como attributes no character. Attributes replicam
+	-- automaticamente pra todos os clients, então o HeadBadgeController vê
+	-- o dado de qualquer player sem round-trip via remote.
+	local character = player.Character
+	local data = self:GetProfile(player)
+	if not character or not data then
+		return
+	end
+	character:SetAttribute(Constants.CharacterAttributes.Level, data.Level)
+
+	local services = self._services
+	local rankService = services and services.RankService
+	if rankService and type(rankService.GetRankBrief) == "function" then
+		local brief = rankService:GetRankBrief(player)
+		character:SetAttribute(Constants.CharacterAttributes.RankName, brief.name)
+		character:SetAttribute(Constants.CharacterAttributes.RankTier, brief.tier)
+	else
+		character:SetAttribute(Constants.CharacterAttributes.RankName, data.Rank)
+		character:SetAttribute(Constants.CharacterAttributes.RankTier, 1)
 	end
 end
 

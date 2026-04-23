@@ -13,19 +13,10 @@ local playerGui = player:WaitForChild("PlayerGui")
 local SummaryController = {}
 SummaryController._panel = nil :: Frame?
 SummaryController._kills = nil :: TextLabel?
-SummaryController._time = nil :: TextLabel?
+SummaryController._ranking = nil :: TextLabel?
 SummaryController._xp = nil :: TextLabel?
 SummaryController._levelLine = nil :: TextLabel?
 SummaryController._lastSummaryKey = ""
-
-local function formatTime(seconds: number): string
-	local mins = math.floor(seconds / 60)
-	local secs = seconds % 60
-	if mins > 0 then
-		return string.format("%dm %02ds", mins, secs)
-	end
-	return string.format("%ds", secs)
-end
 
 function SummaryController:Init(_controllers: { [string]: any }) end
 
@@ -39,7 +30,7 @@ function SummaryController:Start()
 	local panel = Instance.new("Frame")
 	panel.AnchorPoint = Vector2.new(0.5, 0)
 	panel.Position = UDim2.new(0.5, 0, 0.08, 0)
-	panel.Size = UDim2.new(0, 440, 0, 140)
+	panel.Size = UDim2.new(0, 440, 0, 110)
 	panel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 	panel.BackgroundTransparency = 1
 	panel.BorderSizePixel = 0
@@ -49,20 +40,9 @@ function SummaryController:Start()
 	corner.CornerRadius = UDim.new(0, 12)
 	corner.Parent = panel
 
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -16, 0, 28)
-	title.Position = UDim2.new(0, 8, 0, 4)
-	title.BackgroundTransparency = 1
-	title.Text = "FIM DA VIDA"
-	title.TextColor3 = Color3.fromRGB(255, 200, 80)
-	title.TextScaled = true
-	title.Font = Enum.Font.GothamBlack
-	title.TextTransparency = 1
-	title.Parent = panel
-
 	local stats = Instance.new("Frame")
 	stats.Size = UDim2.new(1, -16, 0, 70)
-	stats.Position = UDim2.new(0, 8, 0, 38)
+	stats.Position = UDim2.new(0, 8, 0, 8)
 	stats.BackgroundTransparency = 1
 	stats.Parent = panel
 
@@ -87,12 +67,12 @@ function SummaryController:Start()
 	end
 
 	local killsLabel = makeStat("0\nkills", Color3.fromRGB(255, 255, 255))
-	local timeLabel = makeStat("0s\nvivo", Color3.fromRGB(200, 200, 220))
+	local rankingLabel = makeStat("+0\nFP", Color3.fromRGB(200, 200, 220))
 	local xpLabel = makeStat("+0\nXP", Color3.fromRGB(120, 220, 120))
 
 	local levelLine = Instance.new("TextLabel")
 	levelLine.Size = UDim2.new(1, -16, 0, 24)
-	levelLine.Position = UDim2.new(0, 8, 0, 110)
+	levelLine.Position = UDim2.new(0, 8, 0, 80)
 	levelLine.BackgroundTransparency = 1
 	levelLine.Text = ""
 	levelLine.TextColor3 = Color3.fromRGB(80, 255, 120)
@@ -103,18 +83,18 @@ function SummaryController:Start()
 
 	self._panel = panel
 	self._kills = killsLabel
-	self._time = timeLabel
+	self._ranking = rankingLabel
 	self._xp = xpLabel
 	self._levelLine = levelLine
 
 	local function show(summary: { [string]: any })
 		local kills = summary.kills or 0
-		local timeAlive = summary.timeAliveSeconds or 0
 		local xp = summary.xpGained or 0
+		local rankDelta = summary.rankDelta or 0
 		local leveled = summary.leveledUp == true
 		local newLevel = summary.newLevel
 
-		local key = string.format("%d|%d|%d|%s", kills, timeAlive, xp, tostring(newLevel))
+		local key = string.format("%d|%d|%d|%s", kills, xp, rankDelta, tostring(newLevel))
 		if key == self._lastSummaryKey then
 			return
 		end
@@ -123,15 +103,23 @@ function SummaryController:Start()
 		if self._kills then
 			self._kills.Text = string.format("%d\nkills", kills)
 		end
-		if self._time then
-			self._time.Text = string.format("%s\nvivo", formatTime(timeAlive))
+		if self._ranking then
+			local sign = rankDelta >= 0 and "+" or ""
+			self._ranking.Text = string.format("%s%d\nFP", sign, rankDelta)
+			if rankDelta > 0 then
+				self._ranking.TextColor3 = Color3.fromRGB(120, 220, 120)
+			elseif rankDelta < 0 then
+				self._ranking.TextColor3 = Color3.fromRGB(220, 100, 100)
+			else
+				self._ranking.TextColor3 = Color3.fromRGB(200, 200, 220)
+			end
 		end
 		if self._xp then
 			self._xp.Text = string.format("+%d\nXP", xp)
 		end
 		if self._levelLine then
 			if leveled and typeof(newLevel) == "number" then
-				self._levelLine.Text = string.format("⬆ LEVEL UP! Agora Level %d", newLevel)
+				self._levelLine.Text = string.format("⬆ LEVEL UP! Now Level %d", newLevel)
 			else
 				self._levelLine.Text = ""
 			end
@@ -139,9 +127,8 @@ function SummaryController:Start()
 
 		local fadeIn = TweenInfo.new(0.25)
 		TweenService:Create(panel, fadeIn, { BackgroundTransparency = 0.15 }):Play()
-		TweenService:Create(title, fadeIn, { TextTransparency = 0 }):Play()
 		TweenService:Create(killsLabel, fadeIn, { TextTransparency = 0 }):Play()
-		TweenService:Create(timeLabel, fadeIn, { TextTransparency = 0 }):Play()
+		TweenService:Create(rankingLabel, fadeIn, { TextTransparency = 0 }):Play()
 		TweenService:Create(xpLabel, fadeIn, { TextTransparency = 0 }):Play()
 		if self._levelLine and self._levelLine.Text ~= "" then
 			TweenService:Create(self._levelLine, fadeIn, { TextTransparency = 0 }):Play()
@@ -153,9 +140,8 @@ function SummaryController:Start()
 			end
 			local fadeOut = TweenInfo.new(0.5)
 			TweenService:Create(panel, fadeOut, { BackgroundTransparency = 1 }):Play()
-			TweenService:Create(title, fadeOut, { TextTransparency = 1 }):Play()
 			TweenService:Create(killsLabel, fadeOut, { TextTransparency = 1 }):Play()
-			TweenService:Create(timeLabel, fadeOut, { TextTransparency = 1 }):Play()
+			TweenService:Create(rankingLabel, fadeOut, { TextTransparency = 1 }):Play()
 			TweenService:Create(xpLabel, fadeOut, { TextTransparency = 1 }):Play()
 			if self._levelLine then
 				TweenService:Create(self._levelLine, fadeOut, { TextTransparency = 1 }):Play()

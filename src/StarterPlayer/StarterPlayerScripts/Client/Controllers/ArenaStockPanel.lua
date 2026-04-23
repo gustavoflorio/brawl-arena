@@ -5,9 +5,15 @@ local TweenService = game:GetService("TweenService")
 
 local MAX_CARDS = 4
 local CARD_WIDTH = 60
-local CARD_HEIGHT = 82
+local CARD_HEIGHT = 96
 local AVATAR_SIZE = 44
 local CARD_GAP = 8
+local SERIES_LENGTH = 3
+local SERIES_SLOT_SIZE = 12
+local SERIES_SLOT_GAP = 3
+local PROMO_COLOR = Color3.fromRGB(80, 220, 120)
+local DEMOTE_COLOR = Color3.fromRGB(220, 80, 80)
+local SLOT_EMPTY_COLOR = Color3.fromRGB(50, 50, 65)
 local PLACEHOLDER_IMAGE = "rbxasset://textures/ui/GuiImagePlaceholder.png"
 
 local LOCAL_BORDER = Color3.fromRGB(255, 200, 60)
@@ -32,12 +38,18 @@ local RANK_ICON_IDS = {
 	Champion = "rbxassetid://83852817358288",
 }
 
+type SeriesState = {
+	kind: string,
+	progress: number,
+}
+
 type ArenaPlayerSnapshot = {
 	userId: number,
 	displayName: string,
 	damagePercent: number,
 	level: number,
 	rank: { name: string, tier: number },
+	series: SeriesState?,
 }
 
 type Card = {
@@ -47,6 +59,8 @@ type Card = {
 	damageLabel: TextLabel,
 	levelLabel: TextLabel,
 	rankLogo: ImageLabel,
+	seriesRow: Frame,
+	seriesSlots: { TextLabel },
 	userId: number?,
 	shattering: boolean?,
 }
@@ -208,6 +222,46 @@ function ArenaStockPanel:_createCard(container: Frame, index: number): Card
 	rankLogo.ScaleType = Enum.ScaleType.Fit
 	rankLogo.Parent = metaRow
 
+	-- Series indicator: 3 slots que viram ✓ (promo) ou ✗ (demote) conforme progresso.
+	-- Hidden quando player não está em série.
+	local seriesRow = Instance.new("Frame")
+	seriesRow.Name = "Series"
+	seriesRow.AnchorPoint = Vector2.new(0.5, 0)
+	seriesRow.Position = UDim2.new(0.5, 0, 0, AVATAR_SIZE + 38)
+	seriesRow.Size = UDim2.new(0, SERIES_LENGTH * SERIES_SLOT_SIZE + (SERIES_LENGTH - 1) * SERIES_SLOT_GAP, 0, SERIES_SLOT_SIZE)
+	seriesRow.BackgroundTransparency = 1
+	seriesRow.Visible = false
+	seriesRow.Parent = card
+
+	local seriesLayout = Instance.new("UIListLayout")
+	seriesLayout.FillDirection = Enum.FillDirection.Horizontal
+	seriesLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	seriesLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	seriesLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	seriesLayout.Padding = UDim.new(0, SERIES_SLOT_GAP)
+	seriesLayout.Parent = seriesRow
+
+	local seriesSlots: { TextLabel } = {}
+	for i = 1, SERIES_LENGTH do
+		local slot = Instance.new("TextLabel")
+		slot.Name = "Slot" .. tostring(i)
+		slot.LayoutOrder = i
+		slot.Size = UDim2.new(0, SERIES_SLOT_SIZE, 0, SERIES_SLOT_SIZE)
+		slot.BackgroundColor3 = SLOT_EMPTY_COLOR
+		slot.BorderSizePixel = 0
+		slot.Text = ""
+		slot.TextColor3 = Color3.fromRGB(255, 255, 255)
+		slot.TextSize = 11
+		slot.Font = Enum.Font.GothamBlack
+		slot.Parent = seriesRow
+
+		local slotCorner = Instance.new("UICorner")
+		slotCorner.CornerRadius = UDim.new(1, 0)
+		slotCorner.Parent = slot
+
+		table.insert(seriesSlots, slot)
+	end
+
 	return {
 		frame = card,
 		avatarImage = avatar,
@@ -215,6 +269,8 @@ function ArenaStockPanel:_createCard(container: Frame, index: number): Card
 		damageLabel = damageLabel,
 		levelLabel = levelLabel,
 		rankLogo = rankLogo,
+		seriesRow = seriesRow,
+		seriesSlots = seriesSlots,
 		userId = nil,
 		shattering = false,
 	}
@@ -320,6 +376,29 @@ function ArenaStockPanel:_applyCardData(card: Card, snap: ArenaPlayerSnapshot, i
 		card.rankLogo.ImageColor3 = RANK_TIER_COLORS.Unranked
 	end
 
+	-- Series indicator: ✓ verde (promo) ou ✗ vermelho (demote). Hidden quando sem série.
+	local series = snap.series
+	if series and (series.kind == "promo" or series.kind == "demote") then
+		card.seriesRow.Visible = true
+		local isPromo = series.kind == "promo"
+		local fillColor = isPromo and PROMO_COLOR or DEMOTE_COLOR
+		local symbol = isPromo and "✓" or "✗"
+		local progress = math.clamp(series.progress, 0, SERIES_LENGTH)
+		for i, slot in ipairs(card.seriesSlots) do
+			if i <= progress then
+				slot.BackgroundColor3 = fillColor
+				slot.Text = symbol
+			else
+				slot.BackgroundColor3 = SLOT_EMPTY_COLOR
+				slot.Text = ""
+			end
+			slot.BackgroundTransparency = 0
+			slot.TextTransparency = 0
+		end
+	else
+		card.seriesRow.Visible = false
+	end
+
 	-- Avatar
 	if self._avatarCache[snap.userId] then
 		card.avatarImage.Image = self._avatarCache[snap.userId]
@@ -381,9 +460,13 @@ function ArenaStockPanel:_triggerKOShatter(card: Card)
 		TweenService:Create(card.damageLabel, fadeInfo, { TextTransparency = 1 }):Play()
 		TweenService:Create(card.levelLabel, fadeInfo, { TextTransparency = 1 }):Play()
 		TweenService:Create(card.rankLogo, fadeInfo, { ImageTransparency = 1 }):Play()
+		for _, slot in ipairs(card.seriesSlots) do
+			TweenService:Create(slot, fadeInfo, { BackgroundTransparency = 1, TextTransparency = 1 }):Play()
+		end
 		task.delay(0.45, function()
 			if card.frame.Parent then
 				card.frame.Visible = false
+				card.seriesRow.Visible = false
 				card.userId = nil
 			end
 			card.shattering = false

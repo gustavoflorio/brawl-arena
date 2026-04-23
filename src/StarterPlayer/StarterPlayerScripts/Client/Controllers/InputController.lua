@@ -56,6 +56,10 @@ function InputController:_isBusy(): boolean
 	return false
 end
 
+function InputController:FirePunch(isHeavy: boolean)
+	self:_firePunch(isHeavy)
+end
+
 function InputController:_firePunch(isHeavy: boolean)
 	if self._currentState ~= Constants.PlayerState.InArena then
 		return

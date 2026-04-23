@@ -53,16 +53,23 @@ local RANK_ICON_IDS = {
 	Champion = "rbxassetid://83852817358288",
 }
 
-local function tierNameFromPoints(points: number): string
-	local matched = Constants.Rank.Tiers[1].name
+local function tierInfoFromPoints(points: number): (string, number)
+	local matchedName = Constants.Rank.Tiers[1].name
+	local matchedThreshold = 0
 	for _, tier in ipairs(Constants.Rank.Tiers) do
 		if points >= tier.threshold then
-			matched = tier.name
+			matchedName = tier.name
+			matchedThreshold = tier.threshold
 		else
 			break
 		end
 	end
-	return matched
+	return matchedName, matchedThreshold
+end
+
+local function tierNameFromPoints(points: number): string
+	local name, _ = tierInfoFromPoints(points)
+	return name
 end
 
 local function rankIconForPoints(points: number): string?
@@ -87,7 +94,10 @@ local function formatScore(mode: string, score: number): string
 	local display = Constants.Ranking.ModeDisplay[mode]
 	local suffix = display and display.scoreSuffix or ""
 	if mode == Constants.Ranking.Modes.MMR then
-		return string.format("%d", score)
+		-- Mostra FP within tier (não absoluto). Player Bronze I com 30 within = "30",
+		-- não "130" (que incluiria os 100 do threshold do Bronze I).
+		local _, threshold = tierInfoFromPoints(score)
+		return string.format("%d", score - threshold)
 	end
 	return string.format("%d%s", score, suffix)
 end

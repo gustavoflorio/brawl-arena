@@ -109,8 +109,8 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 	local newLevel, _, leveledUp = playerData:AddXP(puncher, totalXP)
 	local previousLevelPuncher = newLevel - (leveledUp and 1 or 0)
 
-	local puncherRankDelta = rankService:ApplyKillDelta(puncher, targetBrief.tier)
-	local targetRankDelta = rankService:ApplyDeathDelta(target, puncherBrief.tier)
+	local puncherRankDelta = rankService:ApplyKill(puncher)
+	local targetRankDelta = rankService:ApplyDeath(target)
 
 	self:_broadcast(Constants.EventTypes.KillFeed, {
 		puncher = { name = puncher.Name, userId = puncher.UserId, rank = puncherBrief },
@@ -157,6 +157,46 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 			newRank = { name = targetRankDelta.newName, tier = targetRankDelta.newTier },
 			promoted = false,
 		})
+	end
+
+	-- Series banners (não dispara em promo_advanced/demote_advanced — pra esses o
+	-- player vê o progresso direto no card de arena via SeriesIndicator).
+	if puncherRankDelta and puncherRankDelta.seriesEvent then
+		local evt = puncherRankDelta.seriesEvent
+		if evt == "promo_started" then
+			local nextTier = Constants.Rank.Tiers[puncherRankDelta.previousTier + 1]
+			self:_broadcastToPlayer(puncher, Constants.EventTypes.SeriesEvent, {
+				userId = puncher.UserId,
+				kind = "promo_started",
+				currentTier = puncherRankDelta.previousName,
+				targetTier = nextTier and nextTier.name or puncherRankDelta.previousName,
+			})
+		elseif evt == "demote_broken" then
+			self:_broadcastToPlayer(puncher, Constants.EventTypes.SeriesEvent, {
+				userId = puncher.UserId,
+				kind = "demote_broken",
+				currentTier = puncherRankDelta.previousName,
+			})
+		end
+	end
+
+	if targetRankDelta and targetRankDelta.seriesEvent then
+		local evt = targetRankDelta.seriesEvent
+		if evt == "demote_started" then
+			local lowerTier = Constants.Rank.Tiers[targetRankDelta.previousTier - 1]
+			self:_broadcastToPlayer(target, Constants.EventTypes.SeriesEvent, {
+				userId = target.UserId,
+				kind = "demote_started",
+				currentTier = targetRankDelta.previousName,
+				targetTier = lowerTier and lowerTier.name or targetRankDelta.previousName,
+			})
+		elseif evt == "promo_failed" then
+			self:_broadcastToPlayer(target, Constants.EventTypes.SeriesEvent, {
+				userId = target.UserId,
+				kind = "promo_failed",
+				currentTier = targetRankDelta.previousName,
+			})
+		end
 	end
 
 	analytics:Log(Constants.Analytics.Events.Kill, {

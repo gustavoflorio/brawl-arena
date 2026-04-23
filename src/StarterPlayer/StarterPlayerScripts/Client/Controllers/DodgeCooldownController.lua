@@ -3,8 +3,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Net"):WaitForChild("Remotes"))
+
+local function isMobileDevice(): boolean
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -28,6 +34,7 @@ local function buildGui()
 	gui.Name = "BrawlDodgeCooldown"
 	gui.ResetOnSpawn = false
 	gui.IgnoreGuiInset = true
+	gui.Enabled = false
 	gui.Parent = playerGui
 
 	local frame = Instance.new("Frame")
@@ -141,12 +148,32 @@ function DodgeCooldownController:_applyCooldown(remaining: number)
 end
 
 function DodgeCooldownController:Start()
+	-- Em mobile o cooldown é mostrado no D-Pad Down pelo MobileControlsController.
+	-- Evita HUD duplicada + o "S" key label não faz sentido sem teclado.
+	if isMobileDevice() then
+		return
+	end
+
 	local gui, frame, overlay, timeLabel, keyLabel = buildGui()
 	self._gui = gui
 	self._frame = frame
 	self._overlay = overlay
 	self._timeLabel = timeLabel
 	self._keyLabel = keyLabel
+
+	local stateRemote = Remotes.GetStateRemote()
+	if stateRemote then
+		stateRemote.OnClientEvent:Connect(function(snapshot)
+			if typeof(snapshot) ~= "table" then
+				return
+			end
+			local state = snapshot.state
+			if typeof(state) ~= "string" then
+				return
+			end
+			gui.Enabled = state == Constants.PlayerState.InArena
+		end)
+	end
 
 	RunService.Heartbeat:Connect(function()
 		local controllers = self._controllers
