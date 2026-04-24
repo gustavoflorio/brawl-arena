@@ -9,11 +9,14 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Rank = require(sharedFolder:WaitForChild("Rank"))
+
+local ResponsiveLayout = require(script.Parent:WaitForChild("ResponsiveLayout"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -34,6 +37,18 @@ local FP_GOLD = Color3.fromRGB(255, 220, 120)
 
 local POINTS_PER_TIER = Constants.Rank.PointsPerTier
 local CHAMPION_TIER_IDX = #Constants.Rank.Tiers
+
+-- Responsive layout: composição "fixed geometry" em resolução desktop,
+-- escalada via UIScale pra caber no safe viewport (sem reflow estrutural).
+-- Padrão da skill roblox-ui-creator — ver Controllers/ResponsiveLayout.lua.
+local MODAL_DESIGN_WIDTH = 620
+local MODAL_DESIGN_HEIGHT = 520
+local MODAL_POP_START_WIDTH = 480
+local MODAL_POP_START_HEIGHT = 420
+-- Toggle usa reference scale baseado na tela de design (1280x720) pra
+-- encolher proporcionalmente em phones sem sumir.
+local TOGGLE_REFERENCE_WIDTH = 1280
+local TOGGLE_REFERENCE_HEIGHT = 720
 
 type Snapshot = {
 	level: number?,
@@ -79,6 +94,10 @@ StatsPanelController._killsValue = nil :: TextLabel?
 StatsPanelController._deathsValue = nil :: TextLabel?
 StatsPanelController._kdValue = nil :: TextLabel?
 StatsPanelController._inputConn = nil :: RBXScriptConnection?
+StatsPanelController._panelScale = nil :: UIScale?
+StatsPanelController._toggleScale = nil :: UIScale?
+StatsPanelController._viewportConn = nil :: RBXScriptConnection?
+StatsPanelController._cameraChangedConn = nil :: RBXScriptConnection?
 
 -- Helpers -----------------------------------------------------------------
 
@@ -130,7 +149,7 @@ end
 
 -- Build -------------------------------------------------------------------
 
-local function buildToggleButton(gui: ScreenGui): TextButton
+local function buildToggleButton(gui: ScreenGui): (TextButton, UIScale)
 	local button = Instance.new("TextButton")
 	button.Name = "StatsToggle"
 	-- Abaixo do rank badge (top-left: 16,16 + 36 alt + 8 gap = 60). Mesmo width.
@@ -165,7 +184,9 @@ local function buildToggleButton(gui: ScreenGui): TextButton
 	-- Shift no texto pra deixar espaço pro glyph
 	button.Text = "    STATS"
 	button.TextXAlignment = Enum.TextXAlignment.Center
-	return button
+
+	local toggleScale = ResponsiveLayout.EnsureUiScale(button, "ResponsiveScale")
+	return button, toggleScale
 end
 
 local function buildStatCard(parent: Instance, title: string, xOffset: number, width: number, accent: Color3): (Frame, TextLabel)
@@ -232,14 +253,21 @@ local function buildModal(gui: ScreenGui)
 	local panel = Instance.new("Frame")
 	panel.Name = "Panel"
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
+	-- Position é reatribuído via _applyResponsiveLayout() baseado no safe
+	-- viewport atual — centraliza no espaço visível (não na tela física).
 	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.new(0, 620, 0, 520)
+	panel.Size = UDim2.new(0, MODAL_DESIGN_WIDTH, 0, MODAL_DESIGN_HEIGHT)
 	panel.BackgroundColor3 = BG_DEEP
 	panel.BorderSizePixel = 0
 	panel.ZIndex = 11
 	panel.Parent = overlay
 	roundedCorner(panel, 20)
 	stroke(panel, Color3.fromRGB(0, 0, 0), 3, 0)
+
+	-- UIScale pro fit-to-viewport: geometria fixa em design coords, escala
+	-- inteira via ResponsiveLayout. Tween de Size no pop-in continua valendo
+	-- (UIScale é multiplicativo, não atrapalha animação).
+	StatsPanelController._panelScale = ResponsiveLayout.EnsureUiScale(panel, "ResponsiveScale")
 
 	-- Impede que clicks no panel "vazem" pro overlayClick. Parent no próprio
 	-- overlay depois do overlayClick garante que ele fique por cima em Z.
@@ -645,6 +673,46 @@ end
 
 -- Lifecycle ---------------------------------------------------------------
 
+function StatsPanelController:_applyResponsiveLayout()
+	local metrics = ResponsiveLayout.GetViewportMetrics()
+
+	-- Modal: GetViewportFitScale garante que o panel cabe em 94% da largura
+	-- safe e 90% (ou 86% em landscape phone) da altura, mantendo aspect ratio.
+	-- min 0.35, max 1 → não explode em telas gigantes, não desaparece no menor.
+	if self._panelScale then
+		local panelScale = ResponsiveLayout.GetViewportFitScale(
+			metrics,
+			MODAL_DESIGN_WIDTH,
+			MODAL_DESIGN_HEIGHT,
+			0.94,
+			0.9,
+			0.35,
+			1
+		)
+		self._panelScale.Scale = panelScale
+	end
+
+	if self._modalRoot then
+		-- Posiciona no centro do safe viewport (respeita inset top/bottom).
+		self._modalRoot.Position = ResponsiveLayout.GetSafeCenterPosition(metrics)
+	end
+
+	-- Toggle: reference scale baseado em 1280x720 pra encolher proporcional em
+	-- phones sem sumir. min 0.55 preserva legibilidade.
+	if self._toggleScale then
+		local toggleScale = ResponsiveLayout.GetReferenceScale(
+			metrics,
+			TOGGLE_REFERENCE_WIDTH,
+			TOGGLE_REFERENCE_HEIGHT,
+			1,
+			1,
+			0.55,
+			1
+		)
+		self._toggleScale.Scale = toggleScale
+	end
+end
+
 function StatsPanelController:_updateToggleVisibility()
 	if not self._toggleButton then
 		return
@@ -658,6 +726,9 @@ function StatsPanelController:Open()
 	end
 	self._isOpen = true
 	self:_render()
+	-- Reaplica layout antes de abrir: se o viewport mudou enquanto o painel
+	-- estava fechado (rotate de device), scale/position tá stale.
+	self:_applyResponsiveLayout()
 	self._modalOverlay.Visible = true
 	self._modalOverlay.BackgroundTransparency = 1
 	TweenService:Create(
@@ -665,12 +736,13 @@ function StatsPanelController:Open()
 		TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ BackgroundTransparency = 0.45 }
 	):Play()
-	-- Pop-in do painel (DESIGN.md: Back easing em pop-ins, ~200ms)
-	self._modalRoot.Size = UDim2.new(0, 480, 0, 420)
+	-- Pop-in do painel (DESIGN.md: Back easing em pop-ins, ~200ms).
+	-- Tween em design coords — UIScale aplica o fit-to-viewport por fora.
+	self._modalRoot.Size = UDim2.new(0, MODAL_POP_START_WIDTH, 0, MODAL_POP_START_HEIGHT)
 	TweenService:Create(
 		self._modalRoot,
 		TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Size = UDim2.new(0, 620, 0, 520) }
+		{ Size = UDim2.new(0, MODAL_DESIGN_WIDTH, 0, MODAL_DESIGN_HEIGHT) }
 	):Play()
 end
 
@@ -720,13 +792,39 @@ function StatsPanelController:Start()
 	modalGui.Parent = playerGui
 	self._modalGui = modalGui
 
-	local button = buildToggleButton(insetGui)
+	local button, toggleScale = buildToggleButton(insetGui)
 	self._toggleButton = button
+	self._toggleScale = toggleScale
 	button.MouseButton1Click:Connect(function()
 		self:Toggle()
 	end)
 
 	buildModal(modalGui)
+
+	-- Aplica scale inicial + reaplica em resize (rotate de device, join mid-game
+	-- em outro aspect ratio, etc.). Camera pode ser recriada em alguns casos —
+	-- reanexar via CurrentCameraChanged pra não perder a conexão.
+	self:_applyResponsiveLayout()
+
+	local function attachCameraWatcher()
+		if self._viewportConn then
+			self._viewportConn:Disconnect()
+			self._viewportConn = nil
+		end
+		local camera = Workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		self._viewportConn = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			self:_applyResponsiveLayout()
+		end)
+	end
+
+	attachCameraWatcher()
+	self._cameraChangedConn = Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		attachCameraWatcher()
+		self:_applyResponsiveLayout()
+	end)
 
 	-- ESC fecha o painel
 	self._inputConn = UserInputService.InputBegan:Connect(function(input, processed)
