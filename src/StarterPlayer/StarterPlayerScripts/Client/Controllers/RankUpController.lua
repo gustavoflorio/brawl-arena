@@ -16,6 +16,10 @@ local PROMO_COLOR = Color3.fromRGB(80, 220, 120)
 local DEMOTE_COLOR = Color3.fromRGB(220, 80, 80)
 local NEUTRAL_COLOR = Color3.fromRGB(255, 220, 120)
 
+local BANNER_BASE_SIZE = UDim2.new(0, 520, 0, 120)
+local BANNER_POP_SIZE = UDim2.new(0, 580, 0, 140)
+local BANNER_SMALL_SIZE = UDim2.new(0, 260, 0, 60)
+
 local RankUpController = {}
 RankUpController._banner = nil :: Frame?
 RankUpController._title = nil :: TextLabel?
@@ -35,9 +39,23 @@ function RankUpController:_showBanner(titleText: string, titleColor: Color3, sub
 	self._title.TextColor3 = titleColor
 	self._subtitle.Text = subtitleText
 
+	-- Pop-in: scale overshoot + fade-in do banner.
+	self._banner.Size = BANNER_SMALL_SIZE
 	self._banner.BackgroundTransparency = 0.1
 	self._title.TextTransparency = 0
 	self._subtitle.TextTransparency = 0
+
+	local popInfo = TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	TweenService:Create(self._banner, popInfo, { Size = BANNER_POP_SIZE }):Play()
+	task.delay(0.25, function()
+		if self._banner and self._activeKey == key then
+			TweenService:Create(
+				self._banner,
+				TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = BANNER_BASE_SIZE }
+			):Play()
+		end
+	end)
 
 	task.delay(holdSeconds, function()
 		if not self._banner or self._activeKey ~= key then
@@ -121,7 +139,7 @@ function RankUpController:Start()
 	local banner = Instance.new("Frame")
 	banner.AnchorPoint = Vector2.new(0.5, 0.5)
 	banner.Position = UDim2.fromScale(0.5, 0.55)
-	banner.Size = UDim2.new(0, 520, 0, 120)
+	banner.Size = BANNER_BASE_SIZE
 	banner.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 	banner.BackgroundTransparency = 1
 	banner.BorderSizePixel = 0

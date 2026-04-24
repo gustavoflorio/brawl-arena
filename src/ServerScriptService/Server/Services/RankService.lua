@@ -89,6 +89,8 @@ type RankDeltaResult = {
 	newTier: number,
 	previousName: string,
 	newName: string,
+	previousPoints: number,
+	newPoints: number,
 	promoted: boolean,
 	demoted: boolean,
 	seriesKind: string,
@@ -96,12 +98,14 @@ type RankDeltaResult = {
 	seriesEvent: string?,
 }
 
-local function baseResult(prevTierIdx: number, prevTierName: string, profile: any): RankDeltaResult
+local function baseResult(prevTierIdx: number, prevTierName: string, prevPoints: number, profile: any): RankDeltaResult
 	return {
 		previousTier = prevTierIdx,
 		newTier = prevTierIdx,
 		previousName = prevTierName,
 		newName = prevTierName,
+		previousPoints = prevPoints,
+		newPoints = prevPoints,
 		promoted = false,
 		demoted = false,
 		seriesKind = profile.SeriesKind or "none",
@@ -123,8 +127,9 @@ function RankService:ApplyPointsDelta(player: Player, delta: number): RankDeltaR
 		return nil
 	end
 
-	local previousTier, previousName = self:GetTier(profile.RankPoints)
-	local newPoints = math.max(0, profile.RankPoints + delta)
+	local previousPoints = profile.RankPoints
+	local previousTier, previousName = self:GetTier(previousPoints)
+	local newPoints = math.max(0, previousPoints + delta)
 	playerData:SetRankPoints(player, newPoints)
 
 	local newTier, newName = self:GetTier(newPoints)
@@ -136,6 +141,8 @@ function RankService:ApplyPointsDelta(player: Player, delta: number): RankDeltaR
 		newTier = newTier,
 		previousName = previousName,
 		newName = newName,
+		previousPoints = previousPoints,
+		newPoints = newPoints,
 		promoted = newTier > previousTier,
 		demoted = newTier < previousTier,
 		seriesKind = profile.SeriesKind or "none",
@@ -154,7 +161,7 @@ function RankService:ApplyKill(player: Player): RankDeltaResult?
 	local prevAbsoluteFP = profile.RankPoints
 	local prevTierIdx, prevTierName = self:GetTier(prevAbsoluteFP)
 	local rates = self:GetDivisionRates(prevTierIdx)
-	local result = baseResult(prevTierIdx, prevTierName, profile)
+	local result = baseResult(prevTierIdx, prevTierName, prevAbsoluteFP, profile)
 
 	-- Em demote series: kill quebra → safety landing (25 FP no tier atual).
 	if profile.SeriesKind == "demote" then
@@ -163,6 +170,7 @@ function RankService:ApplyKill(player: Player): RankDeltaResult?
 		playerData:SetSeriesState(player, "none", 0)
 		playerData:SetRankName(player, prevTierName)
 		syncOverhead(playerData, player)
+		result.newPoints = newPoints
 		result.seriesKind = "none"
 		result.seriesProgress = 0
 		result.seriesEvent = "demote_broken"
@@ -176,12 +184,14 @@ function RankService:ApplyKill(player: Player): RankDeltaResult?
 			-- Promote!
 			local newTierIdx = math.min(prevTierIdx + 1, CHAMPION_IDX)
 			local newName = Constants.Rank.Tiers[newTierIdx].name
-			playerData:SetRankPoints(player, tierThreshold(newTierIdx))
+			local newPoints = tierThreshold(newTierIdx)
+			playerData:SetRankPoints(player, newPoints)
 			playerData:SetRankName(player, newName)
 			playerData:SetSeriesState(player, "none", 0)
 			syncOverhead(playerData, player)
 			result.newTier = newTierIdx
 			result.newName = newName
+			result.newPoints = newPoints
 			result.promoted = true
 			result.seriesKind = "none"
 			result.seriesProgress = 0
@@ -201,6 +211,7 @@ function RankService:ApplyKill(player: Player): RankDeltaResult?
 	if prevTierIdx >= CHAMPION_IDX then
 		playerData:SetRankPoints(player, gainedFP)
 		syncOverhead(playerData, player)
+		result.newPoints = gainedFP
 		return result
 	end
 
@@ -211,23 +222,28 @@ function RankService:ApplyKill(player: Player): RankDeltaResult?
 			-- Unranked → Bronze I é auto-promote (sem série).
 			local newTierIdx = BRONZE_I_IDX
 			local newName = Constants.Rank.Tiers[newTierIdx].name
-			playerData:SetRankPoints(player, tierThreshold(newTierIdx))
+			local newPoints = tierThreshold(newTierIdx)
+			playerData:SetRankPoints(player, newPoints)
 			playerData:SetRankName(player, newName)
 			syncOverhead(playerData, player)
 			result.newTier = newTierIdx
 			result.newName = newName
+			result.newPoints = newPoints
 			result.promoted = true
 			result.seriesEvent = "auto_promoted"
 		else
 			-- Entra em promo series. FP travado em (próximo threshold - 1) = 99 dentro do tier.
-			playerData:SetRankPoints(player, nextThreshold - 1)
+			local newPoints = nextThreshold - 1
+			playerData:SetRankPoints(player, newPoints)
 			playerData:SetSeriesState(player, "promo", 0)
+			result.newPoints = newPoints
 			result.seriesKind = "promo"
 			result.seriesProgress = 0
 			result.seriesEvent = "promo_started"
 		end
 	else
 		playerData:SetRankPoints(player, gainedFP)
+		result.newPoints = gainedFP
 	end
 
 	syncOverhead(playerData, player)
@@ -244,7 +260,7 @@ function RankService:ApplyDeath(player: Player): RankDeltaResult?
 	local prevAbsoluteFP = profile.RankPoints
 	local prevTierIdx, prevTierName = self:GetTier(prevAbsoluteFP)
 	local rates = self:GetDivisionRates(prevTierIdx)
-	local result = baseResult(prevTierIdx, prevTierName, profile)
+	local result = baseResult(prevTierIdx, prevTierName, prevAbsoluteFP, profile)
 
 	-- Em promo series: morte quebra → fail landing (75 FP no tier atual).
 	if profile.SeriesKind == "promo" then
@@ -253,6 +269,7 @@ function RankService:ApplyDeath(player: Player): RankDeltaResult?
 		playerData:SetSeriesState(player, "none", 0)
 		playerData:SetRankName(player, prevTierName)
 		syncOverhead(playerData, player)
+		result.newPoints = newPoints
 		result.seriesKind = "none"
 		result.seriesProgress = 0
 		result.seriesEvent = "promo_failed"
@@ -266,12 +283,14 @@ function RankService:ApplyDeath(player: Player): RankDeltaResult?
 			-- Demote!
 			local newTierIdx = math.max(prevTierIdx - 1, UNRANKED_IDX)
 			local newName = Constants.Rank.Tiers[newTierIdx].name
-			playerData:SetRankPoints(player, tierThreshold(newTierIdx) + Constants.Rank.DemoteSuccessLanding)
+			local newPoints = tierThreshold(newTierIdx) + Constants.Rank.DemoteSuccessLanding
+			playerData:SetRankPoints(player, newPoints)
 			playerData:SetRankName(player, newName)
 			playerData:SetSeriesState(player, "none", 0)
 			syncOverhead(playerData, player)
 			result.newTier = newTierIdx
 			result.newName = newName
+			result.newPoints = newPoints
 			result.demoted = true
 			result.seriesKind = "none"
 			result.seriesProgress = 0
@@ -291,6 +310,7 @@ function RankService:ApplyDeath(player: Player): RankDeltaResult?
 		local newFP = math.max(floor, prevAbsoluteFP - rates.death)
 		playerData:SetRankPoints(player, newFP)
 		syncOverhead(playerData, player)
+		result.newPoints = newFP
 		return result
 	end
 
@@ -301,11 +321,13 @@ function RankService:ApplyDeath(player: Player): RankDeltaResult?
 		-- Cruzou o piso do tier atual: entra em demote series. FP travado em 0 dentro do tier.
 		playerData:SetRankPoints(player, currentThreshold)
 		playerData:SetSeriesState(player, "demote", 0)
+		result.newPoints = currentThreshold
 		result.seriesKind = "demote"
 		result.seriesProgress = 0
 		result.seriesEvent = "demote_started"
 	else
 		playerData:SetRankPoints(player, newFP)
+		result.newPoints = newFP
 	end
 
 	syncOverhead(playerData, player)

@@ -55,11 +55,21 @@ function LevelUpController:Start()
 		end
 		self._label.Text = string.format("LEVEL %d", payload.newLevel)
 		self._label.TextTransparency = 0
-		local anim = TweenService:Create(self._label, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, 700, 0, 100),
+		-- Pop-in: scale começa pequeno, overshoot via Back easing, settle.
+		self._label.Size = UDim2.new(0, 220, 0, 40)
+		local overshoot = TweenService:Create(self._label, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 780, 0, 120),
 		})
-		anim:Play()
-		task.delay(1.0, function()
+		overshoot:Play()
+		overshoot.Completed:Connect(function()
+			if self._label then
+				local settle = TweenService:Create(self._label, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = UDim2.new(0, 700, 0, 100),
+				})
+				settle:Play()
+			end
+		end)
+		task.delay(1.1, function()
 			if self._label then
 				local fade = TweenService:Create(self._label, TweenInfo.new(0.4), {
 					TextTransparency = 1,

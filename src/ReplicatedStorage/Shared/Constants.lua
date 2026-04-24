@@ -12,6 +12,7 @@ local Constants = {
 		Punch = "Punch",
 		HeavyPunch = "HeavyPunch",
 		DodgeRoll = "DodgeRoll",
+		DI = "DI",
 	},
 	EventTypes = {
 		KillFeed = "KillFeed",
@@ -20,26 +21,113 @@ local Constants = {
 		RankUp = "RankUp",
 		SeriesEvent = "SeriesEvent",
 		XPGain = "XPGain",
+		FPGain = "FPGain",
 	},
 	Combat = {
-		PunchRange = 5,
-		PunchBoxBackOffset = 2,
-		PunchBoxHeight = 6,
-		PunchBoxDepth = 2.5,
-		PunchCloseRadius = 3.5,
-		PunchDamage = 10,
-		PunchCooldown = 0.4,
-		PunchStartupLockSeconds = 0.15,
-		PunchHitDelaySeconds = 0.18,
-		HeavyPunchRange = 8,
-		HeavyPunchCooldown = 1.2,
-		HeavyPunchMultiplier = 3,
-		HeavyPunchStartupLockSeconds = 0.4,
-		HeavyPunchHitDelaySeconds = 0.6,
-		HitStopTargetLight = 0.08,
-		HitStopTargetHeavy = 0.14,
-		HitStopPuncherLight = 0.04,
-		HitStopPuncherHeavy = 0.07,
+		-- Frame data por move. Cada move tem 4 fases temporais:
+		--   Startup  : windup antes da hitbox existir (nenhum hit possível)
+		--   Active   : hitbox ativa (pode conectar; checado em Heartbeat a cada tick)
+		--   Recovery : anim terminando; sem cancel — swing inteiro é committed
+		--   ComboWindow : após recovery, ainda pode iniciar o próximo jab do zero
+		-- Total "lockout sem encadear" = Startup + Active + Recovery.
+		-- Hitstop no alvo = clamp(HitstopBase + damagePercentAlvo * HitstopScale, HitstopBase, HitstopMax).
+		-- Hitstop no atacante = hitstopAlvo * HitstopAttackerRatio.
+		-- LungeSpeed: studs/s aplicados ao longo do facing durante Startup+Active.
+		-- Move locka WalkSpeed=0 e AutoRotate=false pela duração inteira (sem virar
+		-- lateralmente no meio da anim) — direção é committed ao apertar M1.
+		Moves = {
+			-- HitstopScale: segundos de hitstop adicionados por 1% de damage do alvo.
+			-- Jab: atinge cap em ~100% damage; Jab3/Heavy: cap em ~100% (mais peso mais rápido).
+			-- Fórmula: hitstop = clamp(Base + damage% * Scale, Base, Max).
+			Jab1 = {
+				AnimationId = "rbxassetid://116333012742297",
+				Damage = 7,
+				Range = 5,
+				BackOffset = 2,
+				Height = 6,
+				Depth = 2.5,
+				CloseRadius = 3.5,
+				Startup = 0.06,
+				Active = 0.06,
+				Recovery = 0.18,
+				ComboWindow = 0.28,
+				HitstopBase = 0.10,
+				HitstopScale = 0.0010,
+				HitstopMax = 0.20,
+				HitstopAttackerRatio = 0.55,
+				KnockbackMult = 0.55,
+				LungeSpeed = 65,
+				HitKind = "Light",
+				Next = "Jab2",
+				IsHeavy = false,
+			},
+			Jab2 = {
+				AnimationId = "rbxassetid://111917829178320",
+				Damage = 8,
+				Range = 5,
+				BackOffset = 2,
+				Height = 6,
+				Depth = 2.5,
+				CloseRadius = 3.5,
+				Startup = 0.07,
+				Active = 0.06,
+				Recovery = 0.20,
+				ComboWindow = 0.28,
+				HitstopBase = 0.11,
+				HitstopScale = 0.0011,
+				HitstopMax = 0.22,
+				HitstopAttackerRatio = 0.55,
+				KnockbackMult = 0.70,
+				LungeSpeed = 65,
+				HitKind = "Light",
+				Next = "Jab3",
+				IsHeavy = false,
+			},
+			Jab3 = {
+				AnimationId = "rbxassetid://88502951126069",
+				Damage = 15,
+				Range = 6,
+				BackOffset = 2,
+				Height = 6,
+				Depth = 2.5,
+				CloseRadius = 3.8,
+				Startup = 0.12,
+				Active = 0.08,
+				Recovery = 0.35,
+				ComboWindow = 0,
+				HitstopBase = 0.18,
+				HitstopScale = 0.0016,
+				HitstopMax = 0.34,
+				HitstopAttackerRatio = 0.60,
+				KnockbackMult = 1.35,
+				LungeSpeed = 88,
+				HitKind = "Light",
+				Next = nil,
+				IsHeavy = false,
+			},
+			Heavy = {
+				AnimationId = "rbxassetid://83755342484641",
+				Damage = 30,
+				Range = 8,
+				BackOffset = 2,
+				Height = 6,
+				Depth = 2.5,
+				CloseRadius = 3.5,
+				Startup = 0.32,
+				Active = 0.10,
+				Recovery = 0.50,
+				ComboWindow = 0,
+				HitstopBase = 0.20,
+				HitstopScale = 0.0020,
+				HitstopMax = 0.40,
+				HitstopAttackerRatio = 0.60,
+				KnockbackMult = 1.50,
+				LungeSpeed = 48,
+				HitKind = "Heavy",
+				Next = nil,
+				IsHeavy = true,
+			},
+		},
 		InputBufferWindow = 0.15,
 		DodgeRollCooldown = 3.0,
 		DodgeRollDurationSeconds = 0.5,
@@ -49,7 +137,34 @@ local Constants = {
 		KnockbackBase = 40,
 		KnockbackGrowth = 1.5,
 		KnockbackVertical = 35,
+		-- Rate limit: 3 jabs + heavy + dodge em ~1s é possível em combo agressivo.
+		-- Margem pra 8 requests evita engasgo legítimo enquanto ainda bloqueia spam.
+		-- DI tem rate limit próprio (menos agressivo).
 		RateLimitWindow = 1.0,
+		RateLimitMaxRequests = 8,
+		-- Lunge block: se durante o impulso do soco encontrar outro char dentro
+		-- desse raio (XY plane, só pra frente no eixo do facing), cancela o
+		-- lunge pra char não atravessar o oponente. Hitbox ainda conecta (é
+		-- resolvida server-side), o cancel só impede o "phase through".
+		LungeBlockRadius = 3.5,
+	},
+	-- Lag compensation (B1): snapshot ring buffer das posições dos players no
+	-- servidor, permitindo resolver hitbox contra a posição que o atacante
+	-- *viu* ao atacar, não a posição atualizada depois que o request viajou.
+	LagComp = {
+		SnapshotHistorySeconds = 0.5,  -- quanto passado guardamos (30 snaps @ 60Hz)
+		MaxRewindSeconds = 0.25,       -- rewind máximo aceito (anti-abuse)
+	},
+	-- Directional Influence (B2): input horizontal do alvo durante hitstop
+	-- deflete o vetor de knockback. Se segura direção oposta ao KB, deflete
+	-- pra cima (+15°); mesma direção → pra baixo (-10°). Escala linear com
+	-- magnitude do input (joystick parcial = deflexão parcial).
+	DI = {
+		MaxAngleOppositeDeg = 15,
+		MaxAngleSameDeg = -10,
+		FreshnessSeconds = 0.5,
+		-- Rate limit dedicado: cliente pode mandar re-updates durante hitstop
+		-- se input muda; ~4 updates/s é o teto razoável.
 		RateLimitMaxRequests = 4,
 	},
 	Arena = {
@@ -162,11 +277,15 @@ local Constants = {
 		},
 	},
 	Assets = {
-		PunchAnimationId = "rbxassetid://105919524623967",
-		HeavyPunchAnimationId = "rbxassetid://83755342484641",
 		RunAnimationId = "rbxassetid://105129044821151",
 		DoubleJumpAnimationId = "rbxassetid://74399426620925",
 		DodgeRollAnimationId = "rbxassetid://115857807557239",
+		-- Hit reaction: uma das IDs é escolhida aleatoriamente a cada hit
+		-- pra evitar repetição visual monotônica em combos.
+		HitReactionAnimationIds = {
+			"rbxassetid://115075492576917",
+			"rbxassetid://76812069245659",
+		},
 		PunchHitSound = {
 			Id = "rbxassetid://139697578472716",
 			Volume = 0.7,

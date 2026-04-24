@@ -5,7 +5,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
+local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
+local Constants = require(sharedFolder:WaitForChild("Constants"))
+local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -27,14 +29,24 @@ local VFX_TRAIL_MIN_DURATION = 0.05
 
 local vfxFolder: Folder? = ReplicatedStorage:FindFirstChild("Punch VFX") :: Folder?
 
-type TrackKind = "Punch" | "HeavyPunch" | "DodgeRoll" | "DoubleJump" | "Running"
+type TrackKind = "Jab1" | "Jab2" | "Jab3" | "Heavy" | "DodgeRoll" | "DoubleJump" | "Running" | "HitReaction1" | "HitReaction2"
+
+-- Ordem importante: tracks de combat (Jab1-Jab3, Heavy) listadas primeiro
+-- facilita o iteration em IsPunching/cancel.
+local COMBAT_TRACKS: { TrackKind } = { "Jab1", "Jab2", "Jab3", "Heavy" }
+
+local HIT_REACTION_IDS: { string } = Constants.Assets.HitReactionAnimationIds
 
 local ANIM_SPECS: { { name: TrackKind, id: string } } = {
-	{ name = "Punch", id = Constants.Assets.PunchAnimationId },
-	{ name = "HeavyPunch", id = Constants.Assets.HeavyPunchAnimationId },
+	{ name = "Jab1", id = Constants.Combat.Moves.Jab1.AnimationId },
+	{ name = "Jab2", id = Constants.Combat.Moves.Jab2.AnimationId },
+	{ name = "Jab3", id = Constants.Combat.Moves.Jab3.AnimationId },
+	{ name = "Heavy", id = Constants.Combat.Moves.Heavy.AnimationId },
 	{ name = "Running", id = Constants.Assets.RunAnimationId },
 	{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
 	{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
+	{ name = "HitReaction1", id = HIT_REACTION_IDS[1] },
+	{ name = "HitReaction2", id = HIT_REACTION_IDS[2] },
 }
 
 local CombatFxController = {}
@@ -42,6 +54,9 @@ CombatFxController._animCache = {} :: { [string]: Animation }
 CombatFxController._tracks = {} :: { [TrackKind]: AnimationTrack? }
 CombatFxController._runningPlaying = false
 CombatFxController._controllers = nil :: { [string]: any }?
+-- Hit reaction tracks por character: permite cancelar a anim em curso quando
+-- o char leva outro hit em combo (senão duas tracks Action4 blendariam).
+CombatFxController._hitReactionTracks = {} :: { [Model]: AnimationTrack }
 
 local function getHumanoid(character: Model?): Humanoid?
 	if not character then
@@ -126,7 +141,7 @@ local function stopDefaultTracks(animator: Animator, keepTrack: AnimationTrack?)
 end
 
 function CombatFxController:IsPunching(): boolean
-	for _, kind in ipairs({ "Punch", "HeavyPunch" }) do
+	for _, kind in ipairs(COMBAT_TRACKS) do
 		local track = self._tracks[kind]
 		if track and track.IsPlaying then
 			return true
@@ -135,13 +150,30 @@ function CombatFxController:IsPunching(): boolean
 	return false
 end
 
-function CombatFxController:PlayLocalPunch(isHeavy: boolean?)
-	if self:IsPunching() then
+function CombatFxController:PlayLocalPunch(moveKey: string?)
+	-- moveKey: "Jab1" | "Jab2" | "Jab3" | "Heavy". Default "Jab1" por compat
+	-- com callers sem contexto de combo.
+	local kind: TrackKind = (moveKey :: any) or "Jab1"
+	local move = Constants.Combat.Moves[kind]
+	if not move then
 		return
 	end
-	local kind: TrackKind = isHeavy and "HeavyPunch" or "Punch"
-	local assetId = isHeavy and Constants.Assets.HeavyPunchAnimationId or Constants.Assets.PunchAnimationId
-	local track = self:_loadTrack(kind, assetId, Enum.AnimationPriority.Action4, false)
+
+	-- Cancel: para qualquer punch anim em execução antes de tocar a próxima.
+	-- Sem isso, jab2 entraria em blend com jab1 e faria ambos tocando juntos.
+	-- Fade out curto (0.03s) pra não estancar visualmente — é o que dá o
+	-- "crunch" visual do combo.
+	for _, otherKind in ipairs(COMBAT_TRACKS) do
+		if otherKind ~= kind then
+			local existing = self._tracks[otherKind]
+			if existing and existing.IsPlaying then
+				existing:Stop(0.03)
+				self._tracks[otherKind] = nil
+			end
+		end
+	end
+
+	local track = self:_loadTrack(kind, move.AnimationId, Enum.AnimationPriority.Action4, false)
 	if not track then
 		return
 	end
@@ -230,6 +262,75 @@ function CombatFxController:ResetCharacterTracks()
 	self._runningPlaying = false
 end
 
+function CombatFxController:_playHitReactionOn(character: Model)
+	-- Toca uma das anims de hit reaction aleatoriamente no Animator do char.
+	-- Roda pro char LOCAL E pra qualquer char remoto (cada cliente toca sua
+	-- própria cópia — visual-only, não replica). Nova anim cancela a anterior
+	-- se o char é atingido de novo antes do fim (combo consecutivo).
+	-- Durante hitstop, a anim fica congelada no frame 0 (pose de impacto);
+	-- quando hitstop acaba, continua com speed normal — gera o efeito de
+	-- "impacto congelado → sacudo pós-hit" típico de fighting games.
+	if #HIT_REACTION_IDS == 0 then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		return
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Cancel anim de hit reaction anterior do mesmo char.
+	local existing = self._hitReactionTracks[character]
+	if existing then
+		if existing.IsPlaying then
+			existing:Stop(0.05)
+		end
+		self._hitReactionTracks[character] = nil
+	end
+
+	local idx = math.random(1, #HIT_REACTION_IDS)
+	local kind: TrackKind = (idx == 1 and "HitReaction1" or "HitReaction2") :: any
+	local anim = self:_getAnimation(kind, HIT_REACTION_IDS[idx])
+
+	local ok, result = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	if not ok or not result then
+		return
+	end
+	local track = result :: AnimationTrack
+	track.Priority = Enum.AnimationPriority.Action4
+	track.Looped = false
+	self._hitReactionTracks[character] = track
+	track.Stopped:Connect(function()
+		if self._hitReactionTracks[character] == track then
+			self._hitReactionTracks[character] = nil
+		end
+		track:Destroy()
+	end)
+	track:Play(0.05)
+
+	-- Hitstop freeze: se o char está em hitstop (set pelo server no mesmo
+	-- instante do HitSeq bump), pausa a anim e agenda retomada ao fim do
+	-- hitstop. Funciona pra char local e remoto porque HITSTOP_UNTIL_ATTR
+	-- é replicado via attribute.
+	local hitstopUntil = character:GetAttribute(HITSTOP_UNTIL_ATTR)
+	if typeof(hitstopUntil) == "number" then
+		local remaining = hitstopUntil - os.clock()
+		if remaining > 0 then
+			track:AdjustSpeed(0)
+			task.delay(remaining, function()
+				if track and track.IsPlaying and self._hitReactionTracks[character] == track then
+					track:AdjustSpeed(1)
+				end
+			end)
+		end
+	end
+end
+
 local function playHitSoundAt(root: BasePart)
 	local cfg = Constants.Assets.PunchHitSound
 	local sound = Instance.new("Sound")
@@ -306,11 +407,26 @@ local function bindEliminationListener(character: Model)
 	end)
 end
 
+local function sendDIInput(character: Model)
+	-- B2: envia input horizontal atual ao server. Chamada ao entrar em hitstop
+	-- e sempre que MoveDirection mudar durante. Server usa o último valor
+	-- quando vai aplicar knockback (após o fim do hitstop).
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local inputX = humanoid.MoveDirection.X
+	local remote = Remotes.GetRequestRemote()
+	if not remote then
+		return
+	end
+	remote:FireServer(Constants.Actions.DI, { inputX = inputX })
+end
+
 local function bindHitStopListener(character: Model, fxController: any)
-	-- Só roda pro próprio character. Congela combat anims via AdjustSpeed(0)
-	-- e delega walkspeed lock ao MovementController (mesma pattern do
-	-- PunchLock). Sem isso, char faria animação normal + movia enquanto
-	-- server achava que estava em hitstop → desincronia visual.
+	-- Só roda pro próprio character. Congela combat anims via AdjustSpeed(0),
+	-- delega walkspeed lock ao MovementController (mesma pattern do PunchLock),
+	-- e transmite DI input ao server pra modular o knockback (B2).
 	local lastSeen = character:GetAttribute(HITSTOP_SEQ_ATTR)
 	if typeof(lastSeen) ~= "number" then
 		lastSeen = 0
@@ -337,21 +453,41 @@ local function bindHitStopListener(character: Model, fxController: any)
 			movementController:StartHitStopLock(remaining)
 		end
 
-		-- Congela combat anim tracks em curso. Só track de punch/heavy:
+		-- DI: snapshot do input no momento do hit, plus monitor de mudanças
+		-- durante o hitstop inteiro. Server armazena o último valor recebido.
+		sendDIInput(character)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		local diConn: RBXScriptConnection? = nil
+		if humanoid then
+			local lastSentX = humanoid.MoveDirection.X
+			diConn = humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+				if not humanoid.Parent then
+					return
+				end
+				local currX = humanoid.MoveDirection.X
+				-- Só manda se mudou significativamente (anti-jitter do joystick).
+				if math.abs(currX - lastSentX) > 0.2 then
+					lastSentX = currX
+					sendDIInput(character)
+				end
+			end)
+		end
+
+		-- Congela combat anim tracks em curso. Só tracks de jab/heavy:
 		-- running/jump loopam normalmente (se target estava parado socando
 		-- quando foi hit, a anim de punch freeza no meio).
 		local pausedTracks: { { track: AnimationTrack, prevSpeed: number } } = {}
-		for _, kind in ipairs({ "Punch", "HeavyPunch" }) do
+		for _, kind in ipairs(COMBAT_TRACKS) do
 			local track = fxController._tracks[kind]
 			if track and track.IsPlaying then
 				table.insert(pausedTracks, { track = track, prevSpeed = track.Speed })
 				track:AdjustSpeed(0)
 			end
 		end
-		if #pausedTracks == 0 then
-			return
-		end
 		task.delay(remaining, function()
+			if diConn then
+				diConn:Disconnect()
+			end
 			for _, entry in ipairs(pausedTracks) do
 				if entry.track.IsPlaying then
 					entry.track:AdjustSpeed(entry.prevSpeed > 0 and entry.prevSpeed or 1)
@@ -472,10 +608,37 @@ local function bindHitVFXListener(character: Model)
 	end)
 end
 
+-- Hit reaction animation listener: toca uma anim aleatória do pool quando
+-- char é atingido. Separado do VFX listener pra que a anim possa ser
+-- desabilitada sem mexer nos outros efeitos se necessário.
+local function bindHitReactionListener(character: Model, fxController: any)
+	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
+	if typeof(lastSeen) ~= "number" then
+		lastSeen = 0
+	end
+	character:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
+		local seq = character:GetAttribute(HIT_SEQ_ATTR)
+		if typeof(seq) ~= "number" or seq <= lastSeen then
+			return
+		end
+		lastSeen = seq
+		fxController:_playHitReactionOn(character)
+	end)
+end
+
 local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
 		bindHitVFXListener(character)
+		bindHitReactionListener(character, fxController)
+		-- Limpa entry de hit reaction track stale do char anterior.
+		-- (Cada respawn gera novo Model, mas evita leak se referência
+		-- antiga continuasse no dict por algum edge case.)
+		character.AncestryChanged:Connect(function(_, parent)
+			if not parent then
+				fxController._hitReactionTracks[character] = nil
+			end
+		end)
 		if player == localPlayer then
 			bindEliminationListener(character)
 			bindKnockbackListener(character)

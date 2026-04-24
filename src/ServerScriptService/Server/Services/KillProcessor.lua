@@ -123,6 +123,16 @@ function KillProcessor:HandleKill(puncher: Player, target: Player)
 		amount = totalXP,
 	})
 
+	if puncherRankDelta then
+		local fpDelta = (puncherRankDelta.newPoints or 0) - (puncherRankDelta.previousPoints or 0)
+		if fpDelta > 0 then
+			self:_broadcastToPlayer(puncher, Constants.EventTypes.FPGain, {
+				userId = puncher.UserId,
+				amount = fpDelta,
+			})
+		end
+	end
+
 	local streak, streakCount = self:_advanceStreak(puncher)
 	if streak then
 		self:_broadcast(Constants.EventTypes.Streak, {
