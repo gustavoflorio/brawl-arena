@@ -259,6 +259,10 @@ function CombatFxController:ResetCharacterTracks()
 	for kind in pairs(self._tracks) do
 		self._tracks[kind] = nil
 	end
+	-- Limpa refs a tracks de hit reaction de char anterior (respawn).
+	for char in pairs(self._hitReactionTracks) do
+		self._hitReactionTracks[char] = nil
+	end
 	self._runningPlaying = false
 end
 
@@ -630,16 +634,14 @@ local function bindPlayer(player: Player, fxController: any)
 	local function onCharacter(character: Model)
 		bindHitListener(character)
 		bindHitVFXListener(character)
-		bindHitReactionListener(character, fxController)
-		-- Limpa entry de hit reaction track stale do char anterior.
-		-- (Cada respawn gera novo Model, mas evita leak se referência
-		-- antiga continuasse no dict por algum edge case.)
-		character.AncestryChanged:Connect(function(_, parent)
-			if not parent then
-				fxController._hitReactionTracks[character] = nil
-			end
-		end)
 		if player == localPlayer then
+			-- Hit reaction SOMENTE no local player: LoadAnimation em Animator
+			-- remoto (char que não pertence ao cliente) dispara o erro
+			-- "AnimationRig::transformReflectedTypeGenericCallback encountered
+			-- unsupported version" e corrompe o Animator — char para de
+			-- animar de vez. Tocando no local player, a ownership do Animator
+			-- está correta e a anim replica naturalmente pros outros clientes.
+			bindHitReactionListener(character, fxController)
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
 			bindHitStopListener(character, fxController)
