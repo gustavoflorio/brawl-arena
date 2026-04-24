@@ -436,8 +436,10 @@ function CombatService:_applyLobbyTargetHits(
 		if math.abs(delta.Y) > move.Height / 2 + descendant.Size.Y / 2 then
 			continue
 		end
-		-- Z check frouxo pra contemplar bags em Z próximo do player.
-		if math.abs(delta.Z) > move.Depth / 2 + 4 then
+		-- Z check frouxo: lobby é 3D livre (sem axis lock), player e bag podem
+		-- estar em Z próximos mas não iguais. ±10 studs dá folga sem riscar
+		-- triggers acidentais (não há outros LobbyTargets no lobby hoje).
+		if math.abs(delta.Z) > move.Depth / 2 + 10 then
 			continue
 		end
 		-- Sanity: distância do origin inclui close sphere.
