@@ -128,11 +128,13 @@ local function buildNewHud(self)
 	self._rankLabel = rankLabel
 	self._rankAccent = rankAccent
 
-	-- Level/XP panel (top-right, inset-respecting)
+	-- Level/XP panel (top-right, colado no topo do safe viewport).
+	-- Y=0 + IgnoreGuiInset=false no insetGui faz ficar logo abaixo da
+	-- status bar do sistema no mobile, sem gap adicional.
 	local progressPanel = Instance.new("Frame")
 	progressPanel.Name = "LevelXpPanel"
 	progressPanel.AnchorPoint = Vector2.new(1, 0)
-	progressPanel.Position = UDim2.new(1, -16, 0, 16)
+	progressPanel.Position = UDim2.new(1, -16, 0, 0)
 	progressPanel.Size = UDim2.new(0, 220, 0, 60)
 	progressPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 	progressPanel.BackgroundTransparency = 0.25
