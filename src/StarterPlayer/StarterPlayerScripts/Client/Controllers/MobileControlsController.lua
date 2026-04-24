@@ -432,11 +432,45 @@ function MobileControlsController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
 
+-- Patch defensivo: apaga qualquer background de Frame dentro do TouchGui
+-- do Roblox. Em lobby + landscape mobile, o PlayerModule default às vezes
+-- renderiza visuals semitransparentes escuros (ex: hint do DynamicThumbstick
+-- em alguns devices, base de Thumbstick se cair em classic). ImageLabels e
+-- ImageButtons ficam intocados — ring/nub do thumbstick ainda aparecem no
+-- toque, jump button continua visível.
+local function hideTouchGuiBackgrounds(playerGui: PlayerGui)
+	local function killFrameBg(instance: Instance)
+		if instance:IsA("Frame") then
+			instance.BackgroundTransparency = 1
+		end
+	end
+
+	local function patch(gui: Instance)
+		for _, descendant in ipairs(gui:GetDescendants()) do
+			killFrameBg(descendant)
+		end
+		gui.DescendantAdded:Connect(killFrameBg)
+	end
+
+	for _, child in ipairs(playerGui:GetChildren()) do
+		if child.Name == "TouchGui" then
+			patch(child)
+		end
+	end
+	playerGui.ChildAdded:Connect(function(child)
+		if child.Name == "TouchGui" then
+			patch(child)
+		end
+	end)
+end
+
 function MobileControlsController:Start()
 	if not isMobileDevice() then
 		return
 	end
 	self._enabled = true
+
+	hideTouchGuiBackgrounds(player:WaitForChild("PlayerGui"))
 
 	-- Respawns dentro da arena re-criam o character. PlayerModule.controls
 	-- mantém o estado disable entre spawns, mas garantimos via re-disable
