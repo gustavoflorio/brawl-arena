@@ -70,6 +70,10 @@ local function buildNewHud(self)
 	fullGui.Name = "BrawlHud_Full"
 	fullGui.ResetOnSpawn = false
 	fullGui.IgnoreGuiInset = true
+	-- DisplayOrder alto pra ficar por cima da CoreGui (status bar mobile).
+	-- Mesmo padrão do pet_tycoon BondUI — garante que widget colado no topo
+	-- seja visivel em phones com notch/status bar.
+	fullGui.DisplayOrder = 30
 	fullGui.Parent = playerGui
 	self._fullGui = fullGui
 
@@ -128,19 +132,19 @@ local function buildNewHud(self)
 	self._rankLabel = rankLabel
 	self._rankAccent = rankAccent
 
-	-- Level/XP panel (top-right, colado no topo do safe viewport).
-	-- Y=0 + IgnoreGuiInset=false no insetGui faz ficar logo abaixo da
-	-- status bar do sistema no mobile, sem gap adicional.
+	-- Level/XP panel (top-right, colado literalmente no topo da tela no mobile).
+	-- Vai no fullGui (IgnoreGuiInset=true) pra renderizar sobre o inset da
+	-- status bar do sistema — mesmo padrao do BondUI do pet_tycoon.
 	local progressPanel = Instance.new("Frame")
 	progressPanel.Name = "LevelXpPanel"
 	progressPanel.AnchorPoint = Vector2.new(1, 0)
-	progressPanel.Position = UDim2.new(1, -16, 0, 0)
+	progressPanel.Position = UDim2.new(1, -16, 0, 6)
 	progressPanel.Size = UDim2.new(0, 220, 0, 60)
 	progressPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 	progressPanel.BackgroundTransparency = 0.25
 	progressPanel.BorderSizePixel = 0
 	progressPanel.Visible = false
-	progressPanel.Parent = insetGui
+	progressPanel.Parent = fullGui
 
 	local progressCorner = Instance.new("UICorner")
 	progressCorner.CornerRadius = UDim.new(0, 10)
