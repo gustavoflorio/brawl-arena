@@ -258,16 +258,15 @@ local function buildModal(gui: ScreenGui)
 	close.AnchorPoint = Vector2.new(1, 0.5)
 	close.Position = UDim2.new(1, 0, 0.5, 0)
 	close.Size = UDim2.new(0, 56, 0, 56)
-	close.BackgroundColor3 = BG_ELEVATED
+	close.BackgroundTransparency = 1
 	close.BorderSizePixel = 0
 	close.Text = "\u{2715}" -- ✕
 	close.TextColor3 = TEXT_PRIMARY
-	close.TextSize = 36
+	close.TextSize = 44
 	close.Font = Enum.Font.GothamBold
 	close.AutoButtonColor = true
 	close.ZIndex = 12
 	close.Parent = header
-	roundedCorner(close, 10)
 
 	-- Rank section
 	local rankSection = Instance.new("Frame")
