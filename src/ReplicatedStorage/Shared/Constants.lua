@@ -56,7 +56,7 @@ local Constants = {
 				HitstopMax = 0.20,
 				HitstopAttackerRatio = 0.55,
 				KnockbackMult = 0.55,
-				LungeSpeed = 20,
+				LungeSpeed = 50,
 				HitKind = "Light",
 				Next = "Jab2",
 				IsHeavy = false,
@@ -78,7 +78,7 @@ local Constants = {
 				HitstopMax = 0.22,
 				HitstopAttackerRatio = 0.55,
 				KnockbackMult = 0.70,
-				LungeSpeed = 20,
+				LungeSpeed = 50,
 				HitKind = "Light",
 				Next = "Jab3",
 				IsHeavy = false,
@@ -294,7 +294,7 @@ local Constants = {
 		},
 		EliminationSound = {
 			Id = "rbxassetid://76627054450785",
-			Volume = 0.85,
+			Volume = 0.34,
 		},
 	},
 	DataStore = {
