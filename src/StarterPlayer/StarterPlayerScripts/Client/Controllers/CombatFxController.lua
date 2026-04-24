@@ -54,9 +54,10 @@ CombatFxController._animCache = {} :: { [string]: Animation }
 CombatFxController._tracks = {} :: { [TrackKind]: AnimationTrack? }
 CombatFxController._runningPlaying = false
 CombatFxController._controllers = nil :: { [string]: any }?
--- Hit reaction tracks por character: permite cancelar a anim em curso quando
--- o char leva outro hit em combo (senão duas tracks Action4 blendariam).
-CombatFxController._hitReactionTracks = {} :: { [Model]: AnimationTrack }
+-- Hit reaction: tracks são pré-loadados UMA VEZ por character (array de N
+-- variantes) e reutilizados. Chamar LoadAnimation/Destroy a cada hit causa
+-- corrupção do Animator em combos rápidos — char para de animar por completo.
+CombatFxController._hitReactionTracks = {} :: { [Model]: { AnimationTrack } }
 
 local function getHumanoid(character: Model?): Humanoid?
 	if not character then
@@ -260,74 +261,98 @@ function CombatFxController:ResetCharacterTracks()
 		self._tracks[kind] = nil
 	end
 	-- Limpa refs a tracks de hit reaction de char anterior (respawn).
+	-- Tracks são donos do Animator antigo → vão embora com o char destroyed.
 	for char in pairs(self._hitReactionTracks) do
 		self._hitReactionTracks[char] = nil
 	end
 	self._runningPlaying = false
 end
 
+function CombatFxController:_prepareHitReactionTracks(character: Model)
+	-- Pré-carrega AnimationTrack pra cada variante de hit reaction UMA VEZ
+	-- no Animator do char. Reutilizadas a cada hit via :Play() em vez de
+	-- LoadAnimation/Destroy. Resolve corrupção do Animator em combos rápidos
+	-- (onde múltiplas LoadAnimation consecutivas quebravam o state e
+	-- travavam todas as anims do char).
+	if #HIT_REACTION_IDS == 0 then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		-- Animator ainda não existe no char; tenta de novo quando adicionado.
+		local conn: RBXScriptConnection? = nil
+		conn = humanoid.ChildAdded:Connect(function(child)
+			if child:IsA("Animator") then
+				if conn then
+					conn:Disconnect()
+				end
+				self:_prepareHitReactionTracks(character)
+			end
+		end)
+		return
+	end
+
+	local tracks: { AnimationTrack } = {}
+	for i, id in ipairs(HIT_REACTION_IDS) do
+		local kind: TrackKind = ("HitReaction" .. tostring(i)) :: any
+		local anim = self:_getAnimation(kind, id)
+		local ok, result = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if ok and result then
+			local track = result :: AnimationTrack
+			track.Priority = Enum.AnimationPriority.Action4
+			track.Looped = false
+			table.insert(tracks, track)
+		end
+	end
+	if #tracks > 0 then
+		self._hitReactionTracks[character] = tracks
+	end
+end
+
 function CombatFxController:_playHitReactionOn(character: Model)
-	-- Toca uma das anims de hit reaction aleatoriamente no Animator do char.
-	-- Roda pro char LOCAL E pra qualquer char remoto (cada cliente toca sua
-	-- própria cópia — visual-only, não replica). Nova anim cancela a anterior
-	-- se o char é atingido de novo antes do fim (combo consecutivo).
+	-- Usa tracks pré-carregados em _prepareHitReactionTracks. A cada hit,
+	-- para as que estão tocando e dispara uma variante aleatória do zero.
 	-- Durante hitstop, a anim fica congelada no frame 0 (pose de impacto);
 	-- quando hitstop acaba, continua com speed normal — gera o efeito de
 	-- "impacto congelado → sacudo pós-hit" típico de fighting games.
-	if #HIT_REACTION_IDS == 0 then
+	local tracks = self._hitReactionTracks[character]
+	if not tracks or #tracks == 0 then
 		return
 	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
 		return
 	end
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		return
-	end
 
-	-- Cancel anim de hit reaction anterior do mesmo char.
-	local existing = self._hitReactionTracks[character]
-	if existing then
-		if existing.IsPlaying then
-			existing:Stop(0.05)
+	-- Para variante que estiver tocando (combo consecutivo sobrescreve).
+	for _, t in ipairs(tracks) do
+		if t.IsPlaying then
+			t:Stop(0.05)
 		end
-		self._hitReactionTracks[character] = nil
 	end
 
-	local idx = math.random(1, #HIT_REACTION_IDS)
-	local kind: TrackKind = (idx == 1 and "HitReaction1" or "HitReaction2") :: any
-	local anim = self:_getAnimation(kind, HIT_REACTION_IDS[idx])
-
-	local ok, result = pcall(function()
-		return animator:LoadAnimation(anim)
-	end)
-	if not ok or not result then
-		return
-	end
-	local track = result :: AnimationTrack
-	track.Priority = Enum.AnimationPriority.Action4
-	track.Looped = false
-	self._hitReactionTracks[character] = track
-	track.Stopped:Connect(function()
-		if self._hitReactionTracks[character] == track then
-			self._hitReactionTracks[character] = nil
-		end
-		track:Destroy()
-	end)
+	local track = tracks[math.random(1, #tracks)]
+	track.TimePosition = 0
 	track:Play(0.05)
 
 	-- Hitstop freeze: se o char está em hitstop (set pelo server no mesmo
 	-- instante do HitSeq bump), pausa a anim e agenda retomada ao fim do
-	-- hitstop. Funciona pra char local e remoto porque HITSTOP_UNTIL_ATTR
-	-- é replicado via attribute.
+	-- hitstop. HITSTOP_UNTIL_ATTR é replicado via attribute.
 	local hitstopUntil = character:GetAttribute(HITSTOP_UNTIL_ATTR)
 	if typeof(hitstopUntil) == "number" then
 		local remaining = hitstopUntil - os.clock()
 		if remaining > 0 then
 			track:AdjustSpeed(0)
 			task.delay(remaining, function()
-				if track and track.IsPlaying and self._hitReactionTracks[character] == track then
+				-- Só retoma se a mesma track ainda está tocando (se outro hit
+				-- chegou antes, essa track já foi stopada).
+				if track and track.IsPlaying then
 					track:AdjustSpeed(1)
 				end
 			end)
@@ -641,11 +666,15 @@ local function bindPlayer(player: Player, fxController: any)
 			-- unsupported version" e corrompe o Animator — char para de
 			-- animar de vez. Tocando no local player, a ownership do Animator
 			-- está correta e a anim replica naturalmente pros outros clientes.
+			fxController:ResetCharacterTracks()
+			-- Pré-carrega os tracks de hit reaction UMA VEZ por character.
+			-- Reutilizados a cada hit via :Play() — evita o ciclo
+			-- LoadAnimation/Destroy por hit que corrompia o Animator.
+			fxController:_prepareHitReactionTracks(character)
 			bindHitReactionListener(character, fxController)
 			bindEliminationListener(character)
 			bindKnockbackListener(character)
 			bindHitStopListener(character, fxController)
-			fxController:ResetCharacterTracks()
 		end
 	end
 	if player.Character then
