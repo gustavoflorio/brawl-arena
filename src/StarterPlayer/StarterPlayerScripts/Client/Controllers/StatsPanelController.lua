@@ -42,10 +42,10 @@ local CHAMPION_TIER_IDX = #Constants.Rank.Tiers
 -- Responsive layout: composição "fixed geometry" em resolução desktop,
 -- escalada via UIScale pra caber no safe viewport (sem reflow estrutural).
 -- Padrão da skill roblox-ui-creator — ver Controllers/ResponsiveLayout.lua.
-local MODAL_DESIGN_WIDTH = 620
-local MODAL_DESIGN_HEIGHT = 520
-local MODAL_POP_START_WIDTH = 480
-local MODAL_POP_START_HEIGHT = 420
+local MODAL_DESIGN_WIDTH = 760
+local MODAL_DESIGN_HEIGHT = 580
+local MODAL_POP_START_WIDTH = 600
+local MODAL_POP_START_HEIGHT = 460
 
 type Snapshot = {
 	level: number?,
@@ -162,21 +162,21 @@ local function buildStatCard(parent: Instance, title: string, xOffset: number, w
 
 	local titleLabel = newText(card, "Title")
 	titleLabel.AnchorPoint = Vector2.new(0.5, 0)
-	titleLabel.Position = UDim2.new(0.5, 0, 1, -20)
-	titleLabel.Size = UDim2.new(1, -12, 0, 14)
+	titleLabel.Position = UDim2.new(0.5, 0, 1, -26)
+	titleLabel.Size = UDim2.new(1, -12, 0, 18)
 	titleLabel.Text = title
 	titleLabel.TextColor3 = TEXT_MUTED
-	titleLabel.TextSize = 11
+	titleLabel.TextSize = 14
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 	local value = newText(card, "Value")
 	value.AnchorPoint = Vector2.new(0.5, 0.5)
 	value.Position = UDim2.new(0.5, 0, 0.42, 0)
-	value.Size = UDim2.new(1, -12, 0, 40)
+	value.Size = UDim2.new(1, -12, 0, 50)
 	value.Text = "0"
 	value.TextColor3 = TEXT_PURE
-	value.TextSize = 32
+	value.TextSize = 40
 	value.Font = Enum.Font.GothamBlack
 	value.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -235,7 +235,7 @@ local function buildModal(gui: ScreenGui)
 	-- Header
 	local header = Instance.new("Frame")
 	header.Name = "Header"
-	header.Size = UDim2.new(1, -32, 0, 36)
+	header.Size = UDim2.new(1, -32, 0, 42)
 	header.Position = UDim2.new(0, 16, 0, 16)
 	header.BackgroundTransparency = 1
 	header.ZIndex = 12
@@ -245,7 +245,7 @@ local function buildModal(gui: ScreenGui)
 	title.Size = UDim2.fromScale(1, 1)
 	title.Text = "PLAYER STATS"
 	title.TextColor3 = TEXT_PURE
-	title.TextSize = 22
+	title.TextSize = 28
 	title.Font = Enum.Font.GothamBlack
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.ZIndex = 12
@@ -254,12 +254,12 @@ local function buildModal(gui: ScreenGui)
 	close.Name = "Close"
 	close.AnchorPoint = Vector2.new(1, 0.5)
 	close.Position = UDim2.new(1, 0, 0.5, 0)
-	close.Size = UDim2.new(0, 32, 0, 32)
+	close.Size = UDim2.new(0, 38, 0, 38)
 	close.BackgroundColor3 = BG_ELEVATED
 	close.BorderSizePixel = 0
 	close.Text = "\u{2715}" -- ✕
 	close.TextColor3 = TEXT_PRIMARY
-	close.TextSize = 18
+	close.TextSize = 22
 	close.Font = Enum.Font.GothamBold
 	close.AutoButtonColor = true
 	close.ZIndex = 12
@@ -269,8 +269,8 @@ local function buildModal(gui: ScreenGui)
 	-- Rank section
 	local rankSection = Instance.new("Frame")
 	rankSection.Name = "RankSection"
-	rankSection.Position = UDim2.new(0, 24, 0, 68)
-	rankSection.Size = UDim2.new(1, -48, 0, 110)
+	rankSection.Position = UDim2.new(0, 24, 0, 74)
+	rankSection.Size = UDim2.new(1, -48, 0, 124)
 	rankSection.BackgroundColor3 = BG_SURFACE
 	rankSection.BorderSizePixel = 0
 	rankSection.ZIndex = 12
@@ -280,8 +280,8 @@ local function buildModal(gui: ScreenGui)
 	local rankIcon = Instance.new("ImageLabel")
 	rankIcon.Name = "RankIcon"
 	rankIcon.AnchorPoint = Vector2.new(0, 0.5)
-	rankIcon.Position = UDim2.new(0, 14, 0.5, 0)
-	rankIcon.Size = UDim2.new(0, 80, 0, 80)
+	rankIcon.Position = UDim2.new(0, 16, 0.5, 0)
+	rankIcon.Size = UDim2.new(0, 92, 0, 92)
 	rankIcon.BackgroundTransparency = 1
 	rankIcon.ScaleType = Enum.ScaleType.Fit
 	rankIcon.ZIndex = 13
@@ -290,45 +290,45 @@ local function buildModal(gui: ScreenGui)
 	-- Fallback text quando Unranked (sem ícone)
 	local rankIconFallback = newText(rankSection, "IconFallback")
 	rankIconFallback.AnchorPoint = Vector2.new(0, 0.5)
-	rankIconFallback.Position = UDim2.new(0, 14, 0.5, 0)
-	rankIconFallback.Size = UDim2.new(0, 80, 0, 80)
+	rankIconFallback.Position = UDim2.new(0, 16, 0.5, 0)
+	rankIconFallback.Size = UDim2.new(0, 92, 0, 92)
 	rankIconFallback.Text = "—"
 	rankIconFallback.TextColor3 = TEXT_DIM
-	rankIconFallback.TextSize = 40
+	rankIconFallback.TextSize = 48
 	rankIconFallback.Font = Enum.Font.GothamBlack
 	rankIconFallback.TextXAlignment = Enum.TextXAlignment.Center
 	rankIconFallback.ZIndex = 13
 	rankIconFallback.Visible = false
 
 	local rankName = newText(rankSection, "RankName")
-	rankName.Position = UDim2.new(0, 110, 0, 14)
-	rankName.Size = UDim2.new(1, -130, 0, 28)
+	rankName.Position = UDim2.new(0, 124, 0, 14)
+	rankName.Size = UDim2.new(1, -360, 0, 36)
 	rankName.Text = "Unranked"
 	rankName.TextColor3 = TEXT_PURE
-	rankName.TextSize = 24
+	rankName.TextSize = 30
 	rankName.Font = Enum.Font.GothamBlack
 	rankName.ZIndex = 13
 
 	local rankPointsText = newText(rankSection, "FPText")
 	rankPointsText.AnchorPoint = Vector2.new(1, 0)
-	rankPointsText.Position = UDim2.new(1, -14, 0, 16)
-	rankPointsText.Size = UDim2.new(0, 160, 0, 24)
+	rankPointsText.Position = UDim2.new(1, -16, 0, 16)
+	rankPointsText.Size = UDim2.new(0, 200, 0, 32)
 	rankPointsText.Text = "0 FP"
 	rankPointsText.TextColor3 = FP_GOLD
-	rankPointsText.TextSize = 20
+	rankPointsText.TextSize = 26
 	rankPointsText.Font = Enum.Font.GothamBold
 	rankPointsText.TextXAlignment = Enum.TextXAlignment.Right
 	rankPointsText.ZIndex = 13
 
 	local rankBar = Instance.new("Frame")
 	rankBar.Name = "Bar"
-	rankBar.Position = UDim2.new(0, 110, 0, 54)
-	rankBar.Size = UDim2.new(1, -130, 0, 12)
+	rankBar.Position = UDim2.new(0, 124, 0, 62)
+	rankBar.Size = UDim2.new(1, -144, 0, 14)
 	rankBar.BackgroundColor3 = BG_ELEVATED
 	rankBar.BorderSizePixel = 0
 	rankBar.ZIndex = 13
 	rankBar.Parent = rankSection
-	roundedCorner(rankBar, 6)
+	roundedCorner(rankBar, 7)
 
 	local rankBarFill = Instance.new("Frame")
 	rankBarFill.Name = "Fill"
@@ -337,22 +337,22 @@ local function buildModal(gui: ScreenGui)
 	rankBarFill.BorderSizePixel = 0
 	rankBarFill.ZIndex = 14
 	rankBarFill.Parent = rankBar
-	roundedCorner(rankBarFill, 6)
+	roundedCorner(rankBarFill, 7)
 
 	local rankProgressText = newText(rankSection, "Progress")
-	rankProgressText.Position = UDim2.new(0, 110, 0, 72)
-	rankProgressText.Size = UDim2.new(1, -130, 0, 18)
+	rankProgressText.Position = UDim2.new(0, 124, 0, 84)
+	rankProgressText.Size = UDim2.new(1, -144, 0, 24)
 	rankProgressText.Text = "0 / 100 → Bronze I"
 	rankProgressText.TextColor3 = TEXT_MUTED
-	rankProgressText.TextSize = 13
+	rankProgressText.TextSize = 16
 	rankProgressText.Font = Enum.Font.Gotham
 	rankProgressText.ZIndex = 13
 
 	-- Series row (conditional)
 	local seriesRow = Instance.new("Frame")
 	seriesRow.Name = "SeriesRow"
-	seriesRow.Position = UDim2.new(0, 24, 0, 186)
-	seriesRow.Size = UDim2.new(1, -48, 0, 40)
+	seriesRow.Position = UDim2.new(0, 24, 0, 208)
+	seriesRow.Size = UDim2.new(1, -48, 0, 46)
 	seriesRow.BackgroundColor3 = BG_ELEVATED
 	seriesRow.BorderSizePixel = 0
 	seriesRow.Visible = false
@@ -361,19 +361,19 @@ local function buildModal(gui: ScreenGui)
 	roundedCorner(seriesRow, 10)
 
 	local seriesLabel = newText(seriesRow, "Label")
-	seriesLabel.Position = UDim2.new(0, 14, 0, 0)
-	seriesLabel.Size = UDim2.new(1, -150, 1, 0)
+	seriesLabel.Position = UDim2.new(0, 16, 0, 0)
+	seriesLabel.Size = UDim2.new(1, -160, 1, 0)
 	seriesLabel.Text = "PROMOTION SERIES"
 	seriesLabel.TextColor3 = SUCCESS
-	seriesLabel.TextSize = 14
+	seriesLabel.TextSize = 17
 	seriesLabel.Font = Enum.Font.GothamBold
 	seriesLabel.ZIndex = 13
 
 	local dotsContainer = Instance.new("Frame")
 	dotsContainer.Name = "Dots"
 	dotsContainer.AnchorPoint = Vector2.new(1, 0.5)
-	dotsContainer.Position = UDim2.new(1, -14, 0.5, 0)
-	dotsContainer.Size = UDim2.new(0, 64, 0, 14)
+	dotsContainer.Position = UDim2.new(1, -16, 0.5, 0)
+	dotsContainer.Size = UDim2.new(0, 76, 0, 18)
 	dotsContainer.BackgroundTransparency = 1
 	dotsContainer.ZIndex = 13
 	dotsContainer.Parent = seriesRow
@@ -382,39 +382,39 @@ local function buildModal(gui: ScreenGui)
 	dotsList.FillDirection = Enum.FillDirection.Horizontal
 	dotsList.HorizontalAlignment = Enum.HorizontalAlignment.Right
 	dotsList.VerticalAlignment = Enum.VerticalAlignment.Center
-	dotsList.Padding = UDim.new(0, 6)
+	dotsList.Padding = UDim.new(0, 8)
 	dotsList.Parent = dotsContainer
 
 	local dots: { Frame } = {}
 	for i = 1, Constants.Rank.SeriesLength do
 		local dot = Instance.new("Frame")
 		dot.Name = "Dot" .. i
-		dot.Size = UDim2.fromOffset(14, 14)
+		dot.Size = UDim2.fromOffset(18, 18)
 		dot.BackgroundColor3 = BG_SURFACE
 		dot.BorderSizePixel = 0
 		dot.LayoutOrder = i
 		dot.ZIndex = 14
 		dot.Parent = dotsContainer
-		roundedCorner(dot, 7)
+		roundedCorner(dot, 9)
 		stroke(dot, TEXT_DIM, 1, 0)
 		table.insert(dots, dot)
 	end
 
 	-- Highest rank (compact line)
 	local highestText = newText(panel, "Highest")
-	highestText.Position = UDim2.new(0, 24, 0, 234)
-	highestText.Size = UDim2.new(1, -48, 0, 18)
+	highestText.Position = UDim2.new(0, 24, 0, 264)
+	highestText.Size = UDim2.new(1, -48, 0, 22)
 	highestText.Text = "Highest rank: Unranked"
 	highestText.TextColor3 = TEXT_MUTED
-	highestText.TextSize = 13
+	highestText.TextSize = 16
 	highestText.Font = Enum.Font.Gotham
 	highestText.ZIndex = 12
 
 	-- Level section
 	local levelSection = Instance.new("Frame")
 	levelSection.Name = "LevelSection"
-	levelSection.Position = UDim2.new(0, 24, 0, 266)
-	levelSection.Size = UDim2.new(1, -48, 0, 72)
+	levelSection.Position = UDim2.new(0, 24, 0, 298)
+	levelSection.Size = UDim2.new(1, -48, 0, 86)
 	levelSection.BackgroundColor3 = BG_SURFACE
 	levelSection.BorderSizePixel = 0
 	levelSection.ZIndex = 12
@@ -422,34 +422,34 @@ local function buildModal(gui: ScreenGui)
 	roundedCorner(levelSection, 14)
 
 	local levelLabel = newText(levelSection, "Level")
-	levelLabel.Position = UDim2.new(0, 16, 0, 10)
-	levelLabel.Size = UDim2.new(0, 200, 0, 22)
+	levelLabel.Position = UDim2.new(0, 18, 0, 10)
+	levelLabel.Size = UDim2.new(0, 240, 0, 28)
 	levelLabel.Text = "Level 1"
 	levelLabel.TextColor3 = TEXT_PURE
-	levelLabel.TextSize = 18
+	levelLabel.TextSize = 22
 	levelLabel.Font = Enum.Font.GothamBold
 	levelLabel.ZIndex = 13
 
 	local xpText = newText(levelSection, "XpText")
 	xpText.AnchorPoint = Vector2.new(1, 0)
-	xpText.Position = UDim2.new(1, -16, 0, 12)
-	xpText.Size = UDim2.new(0, 220, 0, 18)
+	xpText.Position = UDim2.new(1, -18, 0, 12)
+	xpText.Size = UDim2.new(0, 260, 0, 24)
 	xpText.Text = "0 / 100 XP"
 	xpText.TextColor3 = TEXT_MUTED
-	xpText.TextSize = 14
+	xpText.TextSize = 18
 	xpText.Font = Enum.Font.GothamBold
 	xpText.TextXAlignment = Enum.TextXAlignment.Right
 	xpText.ZIndex = 13
 
 	local xpBar = Instance.new("Frame")
 	xpBar.Name = "XpBar"
-	xpBar.Position = UDim2.new(0, 16, 0, 42)
-	xpBar.Size = UDim2.new(1, -32, 0, 14)
+	xpBar.Position = UDim2.new(0, 18, 0, 50)
+	xpBar.Size = UDim2.new(1, -36, 0, 18)
 	xpBar.BackgroundColor3 = BG_ELEVATED
 	xpBar.BorderSizePixel = 0
 	xpBar.ZIndex = 13
 	xpBar.Parent = levelSection
-	roundedCorner(xpBar, 7)
+	roundedCorner(xpBar, 9)
 
 	local xpBarFill = Instance.new("Frame")
 	xpBarFill.Name = "Fill"
@@ -458,19 +458,19 @@ local function buildModal(gui: ScreenGui)
 	xpBarFill.BorderSizePixel = 0
 	xpBarFill.ZIndex = 14
 	xpBarFill.Parent = xpBar
-	roundedCorner(xpBarFill, 7)
+	roundedCorner(xpBarFill, 9)
 
 	-- Combat stats cards
 	local statsRow = Instance.new("Frame")
 	statsRow.Name = "StatsRow"
-	statsRow.Position = UDim2.new(0, 24, 0, 354)
-	statsRow.Size = UDim2.new(1, -48, 0, 120)
+	statsRow.Position = UDim2.new(0, 24, 0, 396)
+	statsRow.Size = UDim2.new(1, -48, 0, 140)
 	statsRow.BackgroundTransparency = 1
 	statsRow.ZIndex = 12
 	statsRow.Parent = panel
 
-	local totalW = 620 - 48 -- panel width - padding
-	local gap = 12
+	local totalW = MODAL_DESIGN_WIDTH - 48 -- panel width - padding
+	local gap = 14
 	local cardW = math.floor((totalW - gap * 2) / 3)
 
 	local _, killsValue = buildStatCard(statsRow, "KILLS", 0, cardW, SUCCESS)
@@ -480,11 +480,11 @@ local function buildModal(gui: ScreenGui)
 	-- Footer hint
 	local footer = newText(panel, "Footer")
 	footer.AnchorPoint = Vector2.new(0.5, 1)
-	footer.Position = UDim2.new(0.5, 0, 1, -14)
-	footer.Size = UDim2.new(1, -48, 0, 16)
+	footer.Position = UDim2.new(0.5, 0, 1, -16)
+	footer.Size = UDim2.new(1, -48, 0, 18)
 	footer.Text = "Press ESC or click outside to close"
 	footer.TextColor3 = TEXT_DIM
-	footer.TextSize = 12
+	footer.TextSize = 14
 	footer.Font = Enum.Font.Gotham
 	footer.TextXAlignment = Enum.TextXAlignment.Center
 	footer.ZIndex = 12
@@ -630,15 +630,16 @@ function StatsPanelController:_applyResponsiveLayout()
 	local metrics = ResponsiveLayout.GetViewportMetrics()
 
 	-- Modal: GetViewportFitScale garante que o panel cabe em 94% da largura
-	-- safe e 90% (ou 86% em landscape phone) da altura, mantendo aspect ratio.
-	-- min 0.35, max 1 → não explode em telas gigantes, não desaparece no menor.
+	-- safe e no default dinâmico de altura (0.86 em phoneLandscape, 0.9 em
+	-- shortHeight, 0.94 normal) — previne corte de bottom em phones landscape
+	-- onde inset da status bar come mais altura. min 0.35, max 1.
 	if self._panelScale then
 		local panelScale = ResponsiveLayout.GetViewportFitScale(
 			metrics,
 			MODAL_DESIGN_WIDTH,
 			MODAL_DESIGN_HEIGHT,
 			0.94,
-			0.9,
+			nil,
 			0.35,
 			1
 		)
