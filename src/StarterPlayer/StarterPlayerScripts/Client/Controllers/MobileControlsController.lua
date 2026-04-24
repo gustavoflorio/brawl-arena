@@ -138,13 +138,13 @@ local function makeDirButton(parent: Instance, name: string, text: string, ancho
 	btn.Name = name
 	btn.AnchorPoint = anchor
 	btn.Position = pos
-	btn.Size = UDim2.new(0, 100, 0, 100)
+	btn.Size = UDim2.new(0, 70, 0, 70)
 	btn.BackgroundColor3 = Color3.fromRGB(28, 32, 56)
 	btn.BackgroundTransparency = IDLE_TRANSPARENCY
 	btn.BorderSizePixel = 0
 	btn.Text = text
 	btn.TextColor3 = Color3.fromRGB(230, 232, 240)
-	btn.TextSize = 40
+	btn.TextSize = 28
 	btn.TextTransparency = 0.1
 	btn.Font = Enum.Font.GothamBold
 	btn.AutoButtonColor = false
@@ -213,7 +213,7 @@ function MobileControlsController:_buildGui()
 	pad.Name = "DPad"
 	pad.AnchorPoint = Vector2.new(0, 1)
 	pad.Position = UDim2.new(0, 14, 1, -14)
-	pad.Size = UDim2.new(0, 315, 0, 315)
+	pad.Size = UDim2.new(0, 220, 0, 220)
 	pad.BackgroundTransparency = 1
 	pad.Parent = gui
 
@@ -250,7 +250,7 @@ function MobileControlsController:_buildGui()
 	downGlyph.BackgroundTransparency = 1
 	downGlyph.Text = "▼"
 	downGlyph.TextColor3 = Color3.fromRGB(255, 255, 255)
-	downGlyph.TextSize = 40
+	downGlyph.TextSize = 28
 	downGlyph.TextTransparency = 0.05
 	downGlyph.Font = Enum.Font.GothamBold
 	downGlyph.TextStrokeTransparency = 0.4
