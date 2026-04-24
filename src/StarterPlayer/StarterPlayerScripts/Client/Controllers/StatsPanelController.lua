@@ -149,6 +149,7 @@ local function buildStatCard(parent: Instance, title: string, xOffset: number, w
 	card.Size = UDim2.new(0, width, 1, 0)
 	card.BackgroundColor3 = BG_ELEVATED
 	card.BorderSizePixel = 0
+	card.ZIndex = 13
 	card.Parent = parent
 	roundedCorner(card, 10)
 
@@ -158,6 +159,7 @@ local function buildStatCard(parent: Instance, title: string, xOffset: number, w
 	accentBar.Size = UDim2.new(1, 0, 0, 3)
 	accentBar.BackgroundColor3 = accent
 	accentBar.BorderSizePixel = 0
+	accentBar.ZIndex = 14
 	accentBar.Parent = card
 
 	local titleLabel = newText(card, "Title")
@@ -169,6 +171,7 @@ local function buildStatCard(parent: Instance, title: string, xOffset: number, w
 	titleLabel.TextSize = 14
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+	titleLabel.ZIndex = 14
 
 	local value = newText(card, "Value")
 	value.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -179,6 +182,7 @@ local function buildStatCard(parent: Instance, title: string, xOffset: number, w
 	value.TextSize = 40
 	value.Font = Enum.Font.GothamBlack
 	value.TextXAlignment = Enum.TextXAlignment.Center
+	value.ZIndex = 14
 
 	return card, value
 end
@@ -711,6 +715,10 @@ function StatsPanelController:Start()
 	modalGui.Name = "BrawlStatsPanel"
 	modalGui.ResetOnSpawn = false
 	modalGui.IgnoreGuiInset = true
+	-- Sibling: filhos sempre acima dos pais na render order, independente do
+	-- valor absoluto de ZIndex. Previne que cards (Z default) fiquem atras do
+	-- panelBlocker (Z 11) em places com ZIndexBehavior=Global.
+	modalGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	modalGui.DisplayOrder = 50
 	modalGui.Parent = playerGui
 	self._modalGui = modalGui
