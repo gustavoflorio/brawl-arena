@@ -1,12 +1,9 @@
 --!strict
 
--- Controles mobile dedicados, ativos desde o spawn (lobby + arena).
--- Substitui o thumbstick + jump button padrão do Roblox por um D-Pad
--- (esq/dir/cima/baixo) + A/B à direita. Up do D-Pad = jump (inclui
--- double jump), Down = dodge, A = soco leve, B = soco pesado.
---
--- Desabilita o default PlayerModule logo no Start pra não deixar o
--- thumbstick padrão aparecendo como retângulo escuro no bottom-left.
+-- Controles mobile dedicados pro modo arena. Substitui o thumbstick +
+-- jump button padrão do Roblox por um D-Pad (esq/dir/cima/baixo) + A/B
+-- à direita. Up do D-Pad = jump (inclui double jump), Down = dodge,
+-- A = soco leve, B = soco pesado.
 --
 -- Ativado só em dispositivos touch sem teclado (phones/tablets puros).
 -- Em hybrid laptops com touch+teclado, deixamos o default funcionar.
@@ -18,6 +15,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
+local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 
 local player = Players.LocalPlayer
 
@@ -29,6 +27,7 @@ local MobileControlsController = {}
 MobileControlsController._controllers = nil :: { [string]: any }?
 MobileControlsController._enabled = false
 MobileControlsController._gui = nil :: ScreenGui?
+MobileControlsController._currentState = Constants.PlayerState.InLobby
 MobileControlsController._moveConn = nil :: RBXScriptConnection?
 MobileControlsController._dodgeVisConn = nil :: RBXScriptConnection?
 MobileControlsController._downButton = nil :: TextButton?
@@ -308,6 +307,17 @@ function MobileControlsController:_buildGui()
 	end)
 end
 
+function MobileControlsController:_destroyGui()
+	if self._gui then
+		self._gui:Destroy()
+		self._gui = nil
+	end
+	self._holdLeft = false
+	self._holdRight = false
+	self._downButton = nil
+	self._downOverlay = nil
+end
+
 function MobileControlsController:_disableDefaultControls()
 	if self._controlsDisabled then
 		return
@@ -323,6 +333,19 @@ function MobileControlsController:_disableDefaultControls()
 	if ok then
 		self._controlsDisabled = true
 	end
+end
+
+function MobileControlsController:_enableDefaultControls()
+	if not self._controlsDisabled then
+		return
+	end
+	local controls = self._controls
+	if controls then
+		pcall(function()
+			controls:Enable()
+		end)
+	end
+	self._controlsDisabled = false
 end
 
 function MobileControlsController:_startMovementDriver()
@@ -373,6 +396,38 @@ function MobileControlsController:_startDodgeVisDriver()
 	end)
 end
 
+function MobileControlsController:_stopDodgeVisDriver()
+	if self._dodgeVisConn then
+		self._dodgeVisConn:Disconnect()
+		self._dodgeVisConn = nil
+	end
+end
+
+function MobileControlsController:_stopMovementDriver()
+	if self._moveConn then
+		self._moveConn:Disconnect()
+		self._moveConn = nil
+	end
+	local humanoid = getHumanoid()
+	if humanoid then
+		humanoid:Move(Vector3.zero, false)
+	end
+end
+
+function MobileControlsController:_enterArena()
+	self:_disableDefaultControls()
+	self:_buildGui()
+	self:_startMovementDriver()
+	self:_startDodgeVisDriver()
+end
+
+function MobileControlsController:_exitArena()
+	self:_stopDodgeVisDriver()
+	self:_stopMovementDriver()
+	self:_destroyGui()
+	self:_enableDefaultControls()
+end
+
 function MobileControlsController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
@@ -383,22 +438,41 @@ function MobileControlsController:Start()
 	end
 	self._enabled = true
 
-	-- D-Pad ativo desde o spawn em mobile (lobby + arena). Sem isso, o
-	-- thumbstick default do Roblox aparece como retângulo escuro no canto
-	-- inferior esquerdo do lobby.
-	self:_disableDefaultControls()
-	self:_buildGui()
-	self:_startMovementDriver()
-	self:_startDodgeVisDriver()
-
-	-- Respawns re-criam o character e o PlayerModule.controls pode re-enable
-	-- os default controls. Re-disable defensivamente a cada respawn.
+	-- Respawns dentro da arena re-criam o character. PlayerModule.controls
+	-- mantém o estado disable entre spawns, mas garantimos via re-disable
+	-- defensivo (pra caso o servidor troque de place ou similar).
 	self._characterConn = player.CharacterAdded:Connect(function()
-		task.defer(function()
-			if self._enabled then
-				self:_disableDefaultControls()
-			end
-		end)
+		if self._currentState == Constants.PlayerState.InArena then
+			task.defer(function()
+				if self._currentState == Constants.PlayerState.InArena then
+					self:_disableDefaultControls()
+				end
+			end)
+		end
+	end)
+
+	local remote = Remotes.GetStateRemote()
+	if not remote then
+		warn("[MobileControlsController] BrawlState remote não encontrado.")
+		return
+	end
+	remote.OnClientEvent:Connect(function(snapshot)
+		if typeof(snapshot) ~= "table" then
+			return
+		end
+		local state = snapshot.state
+		if typeof(state) ~= "string" then
+			return
+		end
+		if state == self._currentState then
+			return
+		end
+		self._currentState = state
+		if state == Constants.PlayerState.InArena then
+			self:_enterArena()
+		else
+			self:_exitArena()
+		end
 	end)
 end
 

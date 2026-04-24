@@ -28,7 +28,7 @@
         "DevComputerCameraMovementMode": "UserChoice",
         "DevTouchCameraMovementMode": "UserChoice",
         "DevComputerMovementMode": "UserChoice",
-        "DevTouchMovementMode": "UserChoice",
+        "DevTouchMovementMode": "DynamicThumbstick",
         "CameraMode": "Classic",
         "EnableMouseLockOption": true
       },
