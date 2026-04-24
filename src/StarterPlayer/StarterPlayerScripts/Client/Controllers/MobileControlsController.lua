@@ -432,24 +432,34 @@ function MobileControlsController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
 
--- Patch defensivo: apaga qualquer background de Frame dentro do TouchGui
--- do Roblox. Em lobby + landscape mobile, o PlayerModule default às vezes
--- renderiza visuals semitransparentes escuros (ex: hint do DynamicThumbstick
--- em alguns devices, base de Thumbstick se cair em classic). ImageLabels e
--- ImageButtons ficam intocados — ring/nub do thumbstick ainda aparecem no
--- toque, jump button continua visível.
+-- Patch defensivo: apaga visuals do thumbstick default do Roblox (Frame
+-- backgrounds + ImageLabels da base/nub). Mantém JumpButton visível e
+-- touch ainda funciona (ImageTransparency só afeta render, não hit test).
+local function isThumbstickElement(instance: Instance): boolean
+	local name = instance.Name:lower()
+	-- Classic: ThumbstickFrame, OuterImage, CenterImage, NubFrame
+	-- Dynamic: DynamicThumbstickFrame, ThumbstickRing, ThumbstickArrow, NubFrame
+	return name:find("thumb") ~= nil
+		or name:find("nub") ~= nil
+		or name == "outerimage"
+		or name == "centerimage"
+end
+
 local function hideTouchGuiBackgrounds(playerGui: PlayerGui)
-	local function killFrameBg(instance: Instance)
+	local function killVisual(instance: Instance)
 		if instance:IsA("Frame") then
+			instance.BackgroundTransparency = 1
+		elseif instance:IsA("ImageLabel") and isThumbstickElement(instance) then
+			instance.ImageTransparency = 1
 			instance.BackgroundTransparency = 1
 		end
 	end
 
 	local function patch(gui: Instance)
 		for _, descendant in ipairs(gui:GetDescendants()) do
-			killFrameBg(descendant)
+			killVisual(descendant)
 		end
-		gui.DescendantAdded:Connect(killFrameBg)
+		gui.DescendantAdded:Connect(killVisual)
 	end
 
 	for _, child in ipairs(playerGui:GetChildren()) do
@@ -469,6 +479,15 @@ function MobileControlsController:Start()
 		return
 	end
 	self._enabled = true
+
+	-- Força DynamicThumbstick via código client (sobrepõe o project.json e
+	-- evita Classic Thumbstick, que tem base circular escura visível no
+	-- lobby). DynamicThumbstick é invisível quando idle — só aparece um
+	-- ring fino na posição do toque. Settar via Player instance garante
+	-- que se aplica mesmo sem rebuild do rbxlx.
+	pcall(function()
+		player.DevTouchMovementMode = Enum.DevTouchMovementMode.DynamicThumbstick
+	end)
 
 	hideTouchGuiBackgrounds(player:WaitForChild("PlayerGui"))
 
