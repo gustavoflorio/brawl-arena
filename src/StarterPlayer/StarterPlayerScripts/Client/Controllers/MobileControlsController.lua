@@ -480,15 +480,10 @@ function MobileControlsController:Start()
 	end
 	self._enabled = true
 
-	-- Força DynamicThumbstick via código client (sobrepõe o project.json e
-	-- evita Classic Thumbstick, que tem base circular escura visível no
-	-- lobby). DynamicThumbstick é invisível quando idle — só aparece um
-	-- ring fino na posição do toque. Settar via Player instance garante
-	-- que se aplica mesmo sem rebuild do rbxlx.
-	pcall(function()
-		player.DevTouchMovementMode = Enum.DevTouchMovementMode.DynamicThumbstick
-	end)
-
+	-- DevTouchMovementMode é forçado pra DynamicThumbstick pelo
+	-- TouchModeService no servidor (local script não tem permissão
+	-- pra settar). hideTouchGuiBackgrounds é defesa extra caso ainda
+	-- sobre algum visual residual no TouchGui.
 	hideTouchGuiBackgrounds(player:WaitForChild("PlayerGui"))
 
 	-- Respawns dentro da arena re-criam o character. PlayerModule.controls

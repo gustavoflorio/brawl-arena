@@ -14,6 +14,7 @@ local loadOrder = {
 	"KillProcessor",
 	"ArenaService",
 	"CombatService",
+	"TouchModeService",
 }
 
 function ServiceLoader:Init()
