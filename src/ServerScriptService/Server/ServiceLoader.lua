@@ -13,6 +13,7 @@ local loadOrder = {
 	"MonetizationService",
 	"KillProcessor",
 	"ArenaService",
+	"LobbyTrainingService",
 	"CombatService",
 	"TouchModeService",
 }

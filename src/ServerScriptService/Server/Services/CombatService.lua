@@ -45,7 +45,10 @@ type ActiveSwing = {
 	recoveryEndsAt: number,
 	comboWindowEndsAt: number,
 	rewindTime: number, -- timestamp (workspace:GetServerTimeNow()) usado pra lag comp
-	hitTargets: { [Player]: boolean },
+	-- Chaves podem ser Player (arena hits) ou BasePart (lobby targets como
+	-- punching bag). Dedup por identidade: um mesmo alvo não leva hit duas vezes
+	-- no mesmo swing.
+	hitTargets: { [any]: boolean },
 	phase: string, -- "startup" | "active" | "recovery"
 	facing: Vector3?,
 }
@@ -391,6 +394,67 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	arenaService:PublishState(target)
 end
 
+function CombatService:_applyLobbyTargetHits(
+	puncher: Player,
+	origin: Vector3,
+	facing: Vector3,
+	move: MoveData,
+	hitTargets: { [any]: boolean }
+)
+	-- Scan de props marcados com LobbyTarget=true. Uso OverlapParams com raio
+	-- igual ao alcance do move (cobre close sphere e directional box com folga).
+	-- Dedup por hitTargets (mesmo swing não atinge o bag duas vezes).
+	local lobbyService = (self._services :: Services).LobbyTrainingService
+	if not lobbyService then
+		return
+	end
+	local lobby = Workspace:FindFirstChild("Lobby")
+	if not lobby then
+		return
+	end
+
+	local totalLength = move.Range + move.BackOffset
+	local centerOffset = (move.Range - move.BackOffset) / 2
+	local boxCenter = origin + Vector3.new(facing.X * centerOffset, 0, 0)
+	-- Raio conservador: metade da maior dimensão do box + close radius.
+	local queryRadius = math.max(totalLength / 2, move.Height / 2, move.CloseRadius) + 1
+
+	for _, descendant in ipairs(lobby:GetDescendants()) do
+		if not descendant:IsA("BasePart") then
+			continue
+		end
+		if descendant:GetAttribute("LobbyTarget") ~= true then
+			continue
+		end
+		if hitTargets[descendant] then
+			continue
+		end
+		local delta = descendant.Position - boxCenter
+		if math.abs(delta.X) > totalLength / 2 + descendant.Size.X / 2 then
+			continue
+		end
+		if math.abs(delta.Y) > move.Height / 2 + descendant.Size.Y / 2 then
+			continue
+		end
+		-- Z check frouxo pra contemplar bags em Z próximo do player.
+		if math.abs(delta.Z) > move.Depth / 2 + 4 then
+			continue
+		end
+		-- Sanity: distância do origin inclui close sphere.
+		local originDelta = descendant.Position - origin
+		local inBox = math.abs(originDelta.X) <= totalLength
+		local inSphere = originDelta.Magnitude <= move.CloseRadius + descendant.Size.X / 2
+		if not (inBox or inSphere) then
+			continue
+		end
+		hitTargets[descendant] = true
+		lobbyService:RegisterHit(descendant, puncher, move)
+	end
+	-- queryRadius ainda não é usado (path custom acima é determinístico no 2D);
+	-- mantido como doc da intenção caso futuro migre pra OverlapParams.
+	_ = queryRadius
+end
+
 function CombatService:_resolveRequestedMove(player: Player, requestedKey: string): string?
 	-- Combo sem cancel: durante swing, NENHUM novo move é aceito. Cliente
 	-- buferiza. Jab2/Jab3 só encadeiam DEPOIS do swing anterior completar
@@ -466,8 +530,9 @@ function CombatService:_tickSwings()
 	local arenaService = (self._services :: Services).ArenaService
 
 	for player, swing in pairs(self._activeSwings) do
-		-- Player saiu de arena ou morreu: aborta swing.
-		if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
+		-- Player saiu de arena/lobby (deslogou): aborta swing.
+		local state = arenaService:GetState(player)
+		if state ~= Constants.PlayerState.InArena and state ~= Constants.PlayerState.InLobby then
 			self._activeSwings[player] = nil
 			continue
 		end
@@ -488,12 +553,18 @@ function CombatService:_tickSwings()
 		if swing.phase == "active" then
 			local root = getCharacterRoot(player)
 			if root and swing.facing then
-				local targets = self:_findTargets(player, root.Position, swing.facing, swing.move, swing.rewindTime)
-				for _, target in ipairs(targets) do
-					if not swing.hitTargets[target] then
-						swing.hitTargets[target] = true
-						self:_applyHit(player, target, swing.facing, swing.move)
+				if state == Constants.PlayerState.InArena then
+					local targets = self:_findTargets(player, root.Position, swing.facing, swing.move, swing.rewindTime)
+					for _, target in ipairs(targets) do
+						if not swing.hitTargets[target] then
+							swing.hitTargets[target] = true
+							self:_applyHit(player, target, swing.facing, swing.move)
+						end
 					end
+				elseif state == Constants.PlayerState.InLobby then
+					-- Lobby: só busca alvos kinestésicos (LobbyTarget=true).
+					-- Sem lag comp (bag é estático; swing.rewindTime irrelevante).
+					self:_applyLobbyTargetHits(player, root.Position, swing.facing, swing.move, swing.hitTargets)
 				end
 			end
 			if now >= swing.activeEndsAt then
@@ -521,7 +592,11 @@ end
 
 function CombatService:_handlePunchRequest(player: Player, requestedMoveKey: string, clientTime: number?)
 	local arenaService = (self._services :: Services).ArenaService
-	if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
+	local state = arenaService:GetState(player)
+	-- Permite swing tanto em arena quanto em lobby. No lobby, _tickSwings não
+	-- acha players (filtro InArena em _findTargets), mas detecta LobbyTargets
+	-- pra dar feedback kinestésico (punching bag).
+	if state ~= Constants.PlayerState.InArena and state ~= Constants.PlayerState.InLobby then
 		return
 	end
 	if not self:_checkRateLimit(player) then

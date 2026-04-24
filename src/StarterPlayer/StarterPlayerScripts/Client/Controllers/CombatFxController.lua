@@ -658,6 +658,45 @@ function CombatFxController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
 
+local function bindLobbyTargetHitListener(part: BasePart)
+	-- Punching bag (ou qualquer LobbyTarget) toca som de hit via mesmo pattern
+	-- de HitSeq dos players. Cada cliente ouve local — sem replicação de Sound
+	-- via servidor.
+	local lastSeen = part:GetAttribute(HIT_SEQ_ATTR)
+	if typeof(lastSeen) ~= "number" then
+		lastSeen = 0
+	end
+	part:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
+		local seq = part:GetAttribute(HIT_SEQ_ATTR)
+		if typeof(seq) ~= "number" or seq <= lastSeen then
+			return
+		end
+		lastSeen = seq
+		playHitSoundAt(part)
+	end)
+end
+
+local function watchLobbyForTargets(lobby: Instance)
+	local bound: { [BasePart]: boolean } = {}
+	local function tryBind(instance: Instance)
+		if not instance:IsA("BasePart") then
+			return
+		end
+		if instance:GetAttribute("LobbyTarget") ~= true then
+			return
+		end
+		if bound[instance] then
+			return
+		end
+		bound[instance] = true
+		bindLobbyTargetHitListener(instance)
+	end
+	for _, descendant in ipairs(lobby:GetDescendants()) do
+		tryBind(descendant)
+	end
+	lobby.DescendantAdded:Connect(tryBind)
+end
+
 function CombatFxController:Start()
 	-- ContentProvider:PreloadAsync é obrigatório: sem preload,
 	-- Animator:LoadAnimation retorna tracks com length=0 silenciosamente
@@ -682,6 +721,21 @@ function CombatFxController:Start()
 	Players.PlayerAdded:Connect(function(player)
 		bindPlayer(player, self)
 	end)
+
+	-- Lobby targets (punching bag etc.): bind som de hit. Se Workspace.Lobby
+	-- ainda não existe no momento do Start, escuta até aparecer.
+	local lobby = Workspace:FindFirstChild("Lobby")
+	if lobby then
+		watchLobbyForTargets(lobby)
+	else
+		local conn: RBXScriptConnection
+		conn = Workspace.ChildAdded:Connect(function(child)
+			if child.Name == "Lobby" then
+				conn:Disconnect()
+				watchLobbyForTargets(child)
+			end
+		end)
+	end
 end
 
 return CombatFxController

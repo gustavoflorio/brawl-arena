@@ -92,7 +92,11 @@ function InputController:FirePunch(isHeavy: boolean)
 end
 
 function InputController:_firePunch(isHeavy: boolean)
-	if self._currentState ~= Constants.PlayerState.InArena then
+	-- Lobby permite swing pra punching bag (warm-up). Arena mantém lógica cheia
+	-- (DI, combo, lag comp). Estados desconhecidos continuam bloqueados.
+	if self._currentState ~= Constants.PlayerState.InArena
+		and self._currentState ~= Constants.PlayerState.InLobby
+	then
 		return
 	end
 	if self:_isBusy() then
@@ -235,7 +239,9 @@ function InputController:Start()
 	-- processed pra MouseButton2. M1 respeita processed pra não firar
 	-- punch quando clicando em UI (ex: donate button).
 	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-		if self._currentState ~= Constants.PlayerState.InArena then
+		if self._currentState ~= Constants.PlayerState.InArena
+			and self._currentState ~= Constants.PlayerState.InLobby
+		then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
