@@ -14,6 +14,7 @@ local controllerOrder = {
 	"LevelUpController",
 	"RankUpController",
 	"FloatingGainController",
+	"StatsPanelController",
 	"SummaryController",
 	"DamageLabelController",
 	"HeadBadgeController",

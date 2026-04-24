@@ -170,6 +170,18 @@ function ArenaService:PublishState(player: Player, summary: { [string]: any }?)
 		snapshot.level = profile.Level
 		snapshot.xp = profile.XP
 		snapshot.xpForNextLevel = xpForNext
+		-- Stats pro painel de Stats (StatsPanelController): player-owned scalars
+		-- que não estão expostos nos atributos de character. Mantemos aqui porque
+		-- o PublishState já dispara em todos os momentos relevantes (kill, death,
+		-- level up, enter/leave arena), então o painel sempre tem dado fresco.
+		snapshot.stats = {
+			kills = profile.TotalKills,
+			deaths = profile.TotalDeaths,
+			rankPoints = profile.RankPoints,
+			highestRank = profile.HighestRank,
+			seriesKind = profile.SeriesKind,
+			seriesProgress = profile.SeriesProgress,
+		}
 	end
 	if rank then
 		snapshot.rank = rank
