@@ -1,13 +1,21 @@
 --!strict
 
--- Controles mobile dedicados pro modo arena. Substitui o thumbstick +
--- jump button padrão do Roblox por um D-Pad (esq/dir/cima/baixo) + A/B
--- à direita. Up do D-Pad = jump (inclui double jump), Down = dodge,
--- A = soco leve, B = soco pesado.
+-- Controles mobile dedicados, ativos desde o spawn (lobby + arena).
+-- Substitui 100% do sistema default do Roblox:
+--   * GuiService.TouchControlsEnabled = false → esconde thumbstick/jump
+--   * PlayerModule:GetControls():Disable() → desliga input default
+--   * hideTouchGuiBackgrounds → belt-and-suspenders em qualquer visual residual
+--
+-- Lobby: zona de toque invisível fullscreen, arrasta esquerda/direita pra
+-- mover. Zero UI visível.
+--
+-- Arena: D-Pad (esq/dir/cima/baixo) + A/B à direita. Up = jump (inclui
+-- double), Down = dodge, A = soco leve, B = soco pesado.
 --
 -- Ativado só em dispositivos touch sem teclado (phones/tablets puros).
 -- Em hybrid laptops com touch+teclado, deixamos o default funcionar.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -37,6 +45,9 @@ MobileControlsController._holdRight = false
 MobileControlsController._controls = nil :: any?
 MobileControlsController._controlsDisabled = false
 MobileControlsController._characterConn = nil :: RBXScriptConnection?
+MobileControlsController._lobbyGui = nil :: ScreenGui?
+MobileControlsController._lobbyMoveConn = nil :: RBXScriptConnection?
+MobileControlsController._lobbyHoldX = 0
 
 local function isMobileDevice(): boolean
 	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
@@ -414,8 +425,93 @@ function MobileControlsController:_stopMovementDriver()
 	end
 end
 
+-- Lobby: touch zone invisível fullscreen + Heartbeat driver que lê
+-- posição do dedo relativa ao X center da tela pra decidir direção.
+-- Zero visual — nada escuro aparece no canto.
+function MobileControlsController:_buildLobbyGui()
+	if self._lobbyGui then
+		return
+	end
+
+	local playerGui = player:WaitForChild("PlayerGui")
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "BrawlLobbyTouchMove"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 1
+	gui.Parent = playerGui
+	self._lobbyGui = gui
+
+	local zone = Instance.new("TextButton")
+	zone.Name = "TouchZone"
+	zone.Size = UDim2.new(1, 0, 1, 0)
+	zone.BackgroundTransparency = 1
+	zone.Text = ""
+	zone.AutoButtonColor = false
+	zone.Active = true
+	zone.Modal = false
+	zone.Parent = gui
+
+	local activeInput: InputObject? = nil
+	local startX = 0
+
+	zone.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch and not activeInput then
+			activeInput = input
+			startX = input.Position.X
+			self._lobbyHoldX = 0
+		end
+	end)
+
+	zone.InputChanged:Connect(function(input)
+		if input == activeInput and input.UserInputType == Enum.UserInputType.Touch then
+			local dx = input.Position.X - startX
+			local threshold = 12
+			if dx < -threshold then
+				self._lobbyHoldX = -1
+			elseif dx > threshold then
+				self._lobbyHoldX = 1
+			else
+				self._lobbyHoldX = 0
+			end
+		end
+	end)
+
+	zone.InputEnded:Connect(function(input)
+		if input == activeInput then
+			activeInput = nil
+			self._lobbyHoldX = 0
+		end
+	end)
+
+	self._lobbyMoveConn = RunService.Heartbeat:Connect(function()
+		local humanoid = getHumanoid()
+		if not humanoid then
+			return
+		end
+		humanoid:Move(Vector3.new(self._lobbyHoldX, 0, 0), false)
+	end)
+end
+
+function MobileControlsController:_destroyLobbyGui()
+	if self._lobbyMoveConn then
+		self._lobbyMoveConn:Disconnect()
+		self._lobbyMoveConn = nil
+	end
+	if self._lobbyGui then
+		self._lobbyGui:Destroy()
+		self._lobbyGui = nil
+	end
+	self._lobbyHoldX = 0
+	local humanoid = getHumanoid()
+	if humanoid then
+		humanoid:Move(Vector3.zero, false)
+	end
+end
+
 function MobileControlsController:_enterArena()
-	self:_disableDefaultControls()
+	self:_destroyLobbyGui()
 	self:_buildGui()
 	self:_startMovementDriver()
 	self:_startDodgeVisDriver()
@@ -425,7 +521,7 @@ function MobileControlsController:_exitArena()
 	self:_stopDodgeVisDriver()
 	self:_stopMovementDriver()
 	self:_destroyGui()
-	self:_enableDefaultControls()
+	self:_buildLobbyGui()
 end
 
 function MobileControlsController:Init(controllers: { [string]: any })
@@ -480,23 +576,34 @@ function MobileControlsController:Start()
 	end
 	self._enabled = true
 
-	-- DevTouchMovementMode é forçado pra DynamicThumbstick pelo
-	-- TouchModeService no servidor (local script não tem permissão
-	-- pra settar). hideTouchGuiBackgrounds é defesa extra caso ainda
-	-- sobre algum visual residual no TouchGui.
+	-- Nuke total dos controles default do Roblox em mobile, desde o Start.
+	-- GuiService.TouchControlsEnabled=false é o golden bullet pra esconder
+	-- o visual (thumbstick base + jump button). controls:Disable() mata
+	-- o input handling default. hideTouchGuiBackgrounds é belt-and-suspenders
+	-- caso algum visual teimoso continue. Com isso lobby fica sem retângulo.
+	pcall(function()
+		GuiService.TouchControlsEnabled = false
+	end)
+	self:_disableDefaultControls()
 	hideTouchGuiBackgrounds(player:WaitForChild("PlayerGui"))
 
-	-- Respawns dentro da arena re-criam o character. PlayerModule.controls
-	-- mantém o estado disable entre spawns, mas garantimos via re-disable
-	-- defensivo (pra caso o servidor troque de place ou similar).
+	-- Lobby usa zona de toque invisível fullscreen pra mover: toca +
+	-- arrasta esquerda/direita. Sem visual.
+	self:_buildLobbyGui()
+
+	-- Respawns re-criam o character e o PlayerModule.controls pode
+	-- re-enable default controls + TouchControlsEnabled. Re-aplica
+	-- defensivamente a cada respawn.
 	self._characterConn = player.CharacterAdded:Connect(function()
-		if self._currentState == Constants.PlayerState.InArena then
-			task.defer(function()
-				if self._currentState == Constants.PlayerState.InArena then
-					self:_disableDefaultControls()
-				end
+		task.defer(function()
+			if not self._enabled then
+				return
+			end
+			pcall(function()
+				GuiService.TouchControlsEnabled = false
 			end)
-		end
+			self:_disableDefaultControls()
+		end)
 	end)
 
 	local remote = Remotes.GetStateRemote()
