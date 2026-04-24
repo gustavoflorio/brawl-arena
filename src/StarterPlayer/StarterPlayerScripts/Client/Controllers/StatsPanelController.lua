@@ -260,7 +260,7 @@ local function buildModal(gui: ScreenGui)
 	close.Size = UDim2.new(0, 56, 0, 56)
 	close.BackgroundTransparency = 1
 	close.BorderSizePixel = 0
-	close.Text = "\u{2715}" -- ✕
+	close.Text = "X"
 	close.TextColor3 = TEXT_PRIMARY
 	close.TextSize = 44
 	close.Font = Enum.Font.GothamBold
