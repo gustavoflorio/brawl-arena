@@ -542,11 +542,14 @@ function StatsPanelController:_render()
 	if self._setRankIconAsset then
 		self._setRankIconAsset(Rank.getIconAsset(tierIdx))
 	end
-	if self._rankPointsText then
-		self._rankPointsText.Text = string.format("%d FP", rankPoints)
-	end
 
 	local pointsInTier, pointsToNext, pct = computeTierProgress(rankPoints, tierIdx)
+	if self._rankPointsText then
+		-- FP mostrado é o progresso dentro do tier (0-100), não o absoluto.
+		-- Ex: Bronze I com 187 abs = "87 FP" (87 pontos dentro de Bronze I).
+		-- Champion é terminal — mostra absoluto (sem next tier pra referenciar).
+		self._rankPointsText.Text = string.format("%d FP", pointsInTier)
+	end
 	if self._rankBarFill then
 		self._rankBarFill.Size = UDim2.fromScale(pct, 1)
 	end
