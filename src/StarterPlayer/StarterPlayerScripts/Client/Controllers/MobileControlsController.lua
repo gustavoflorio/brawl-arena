@@ -432,48 +432,6 @@ function MobileControlsController:Init(controllers: { [string]: any })
 	self._controllers = controllers
 end
 
--- Patch defensivo: apaga visuals do thumbstick default do Roblox (Frame
--- backgrounds + ImageLabels da base/nub). Mantém JumpButton visível e
--- touch ainda funciona (ImageTransparency só afeta render, não hit test).
-local function isThumbstickElement(instance: Instance): boolean
-	local name = instance.Name:lower()
-	-- Classic: ThumbstickFrame, OuterImage, CenterImage, NubFrame
-	-- Dynamic: DynamicThumbstickFrame, ThumbstickRing, ThumbstickArrow, NubFrame
-	return name:find("thumb") ~= nil
-		or name:find("nub") ~= nil
-		or name == "outerimage"
-		or name == "centerimage"
-end
-
-local function hideTouchGuiBackgrounds(playerGui: PlayerGui)
-	local function killVisual(instance: Instance)
-		if instance:IsA("Frame") then
-			instance.BackgroundTransparency = 1
-		elseif instance:IsA("ImageLabel") and isThumbstickElement(instance) then
-			instance.ImageTransparency = 1
-			instance.BackgroundTransparency = 1
-		end
-	end
-
-	local function patch(gui: Instance)
-		for _, descendant in ipairs(gui:GetDescendants()) do
-			killVisual(descendant)
-		end
-		gui.DescendantAdded:Connect(killVisual)
-	end
-
-	for _, child in ipairs(playerGui:GetChildren()) do
-		if child.Name == "TouchGui" then
-			patch(child)
-		end
-	end
-	playerGui.ChildAdded:Connect(function(child)
-		if child.Name == "TouchGui" then
-			patch(child)
-		end
-	end)
-end
-
 function MobileControlsController:Start()
 	if not isMobileDevice() then
 		return
@@ -481,10 +439,8 @@ function MobileControlsController:Start()
 	self._enabled = true
 
 	-- DevTouchMovementMode é forçado pra DynamicThumbstick pelo
-	-- TouchModeService no servidor (local script não tem permissão
-	-- pra settar). hideTouchGuiBackgrounds é defesa extra caso ainda
-	-- sobre algum visual residual no TouchGui.
-	hideTouchGuiBackgrounds(player:WaitForChild("PlayerGui"))
+	-- TouchModeService no servidor. DynamicThumbstick é idle-invisible:
+	-- só aparece um ring fino onde o dedo toca, nada persistente no canto.
 
 	-- Respawns dentro da arena re-criam o character. PlayerModule.controls
 	-- mantém o estado disable entre spawns, mas garantimos via re-disable
