@@ -1,9 +1,10 @@
 --!strict
 
 -- Painel de stats do player: rank + progresso FP, série ativa, highest rank,
--- level/XP e combat stats (kills/deaths/KD). Acesso via botão "STATS" no HUD
--- do lobby. Dados vêm do state snapshot (campo `stats`) — o cache é atualizado
--- a cada snapshot, então abrir o painel mostra sempre o estado mais recente.
+-- level/XP e combat stats (kills/deaths/KD). Exposto como Toggle() e acionado
+-- pelo rank badge do HudController (via controllers[StatsPanelController]:Toggle).
+-- Dados vêm do state snapshot (campo `stats`) — o cache é atualizado a cada
+-- snapshot, então abrir o painel mostra sempre o estado mais recente.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -45,10 +46,6 @@ local MODAL_DESIGN_WIDTH = 620
 local MODAL_DESIGN_HEIGHT = 520
 local MODAL_POP_START_WIDTH = 480
 local MODAL_POP_START_HEIGHT = 420
--- Toggle usa reference scale baseado na tela de design (1280x720) pra
--- encolher proporcionalmente em phones sem sumir.
-local TOGGLE_REFERENCE_WIDTH = 1280
-local TOGGLE_REFERENCE_HEIGHT = 720
 
 type Snapshot = {
 	level: number?,
@@ -69,12 +66,9 @@ type Snapshot = {
 local StatsPanelController = {}
 StatsPanelController._latestSnapshot = {} :: Snapshot
 StatsPanelController._isOpen = false
-StatsPanelController._isLobby = true
 
 -- Refs
-StatsPanelController._insetGui = nil :: ScreenGui?
 StatsPanelController._modalGui = nil :: ScreenGui?
-StatsPanelController._toggleButton = nil :: TextButton?
 StatsPanelController._modalRoot = nil :: Frame?
 StatsPanelController._modalOverlay = nil :: Frame?
 StatsPanelController._rankIcon = nil :: ImageLabel?
@@ -95,7 +89,6 @@ StatsPanelController._deathsValue = nil :: TextLabel?
 StatsPanelController._kdValue = nil :: TextLabel?
 StatsPanelController._inputConn = nil :: RBXScriptConnection?
 StatsPanelController._panelScale = nil :: UIScale?
-StatsPanelController._toggleScale = nil :: UIScale?
 StatsPanelController._viewportConn = nil :: RBXScriptConnection?
 StatsPanelController._cameraChangedConn = nil :: RBXScriptConnection?
 
@@ -148,46 +141,6 @@ local function nextTierName(tierIdx: number): string?
 end
 
 -- Build -------------------------------------------------------------------
-
-local function buildToggleButton(gui: ScreenGui): (TextButton, UIScale)
-	local button = Instance.new("TextButton")
-	button.Name = "StatsToggle"
-	-- Abaixo do rank badge (top-left: 16,16 + 36 alt + 8 gap = 60). Mesmo width.
-	button.AnchorPoint = Vector2.new(0, 0)
-	button.Position = UDim2.new(0, 16, 0, 60)
-	button.Size = UDim2.new(0, 140, 0, 32)
-	button.BackgroundColor3 = BG_SURFACE
-	button.BackgroundTransparency = 0.2
-	button.BorderSizePixel = 0
-	button.Text = "STATS"
-	button.TextColor3 = TEXT_PRIMARY
-	button.TextSize = 13
-	button.Font = Enum.Font.GothamBold
-	button.AutoButtonColor = true
-	button.Visible = false
-	button.Parent = gui
-	roundedCorner(button, 8)
-	stroke(button, Color3.fromRGB(0, 0, 0), 2, 0.35)
-
-	-- Pequeno ícone/glyph no left
-	local glyph = Instance.new("TextLabel")
-	glyph.Name = "Glyph"
-	glyph.AnchorPoint = Vector2.new(0, 0.5)
-	glyph.Position = UDim2.new(0, 10, 0.5, 0)
-	glyph.Size = UDim2.new(0, 18, 0, 18)
-	glyph.BackgroundTransparency = 1
-	glyph.Text = "\u{1F4CA}" -- gráfico de barras
-	glyph.TextSize = 14
-	glyph.Font = Enum.Font.Gotham
-	glyph.Parent = button
-
-	-- Shift no texto pra deixar espaço pro glyph
-	button.Text = "    STATS"
-	button.TextXAlignment = Enum.TextXAlignment.Center
-
-	local toggleScale = ResponsiveLayout.EnsureUiScale(button, "ResponsiveScale")
-	return button, toggleScale
-end
 
 local function buildStatCard(parent: Instance, title: string, xOffset: number, width: number, accent: Color3): (Frame, TextLabel)
 	local card = Instance.new("Frame")
@@ -696,28 +649,6 @@ function StatsPanelController:_applyResponsiveLayout()
 		-- Posiciona no centro do safe viewport (respeita inset top/bottom).
 		self._modalRoot.Position = ResponsiveLayout.GetSafeCenterPosition(metrics)
 	end
-
-	-- Toggle: reference scale baseado em 1280x720 pra encolher proporcional em
-	-- phones sem sumir. min 0.55 preserva legibilidade.
-	if self._toggleScale then
-		local toggleScale = ResponsiveLayout.GetReferenceScale(
-			metrics,
-			TOGGLE_REFERENCE_WIDTH,
-			TOGGLE_REFERENCE_HEIGHT,
-			1,
-			1,
-			0.55,
-			1
-		)
-		self._toggleScale.Scale = toggleScale
-	end
-end
-
-function StatsPanelController:_updateToggleVisibility()
-	if not self._toggleButton then
-		return
-	end
-	self._toggleButton.Visible = self._isLobby
 end
 
 function StatsPanelController:Open()
@@ -775,15 +706,6 @@ end
 function StatsPanelController:Init(_controllers: { [string]: any }) end
 
 function StatsPanelController:Start()
-	-- Dois ScreenGuis: um inset-respecting pro botão (pra não ficar atrás da
-	-- status bar do mobile), outro full pra modal.
-	local insetGui = Instance.new("ScreenGui")
-	insetGui.Name = "BrawlStatsToggle"
-	insetGui.ResetOnSpawn = false
-	insetGui.IgnoreGuiInset = false
-	insetGui.Parent = playerGui
-	self._insetGui = insetGui
-
 	local modalGui = Instance.new("ScreenGui")
 	modalGui.Name = "BrawlStatsPanel"
 	modalGui.ResetOnSpawn = false
@@ -791,13 +713,6 @@ function StatsPanelController:Start()
 	modalGui.DisplayOrder = 50
 	modalGui.Parent = playerGui
 	self._modalGui = modalGui
-
-	local button, toggleScale = buildToggleButton(insetGui)
-	self._toggleButton = button
-	self._toggleScale = toggleScale
-	button.MouseButton1Click:Connect(function()
-		self:Toggle()
-	end)
 
 	buildModal(modalGui)
 
@@ -851,14 +766,10 @@ function StatsPanelController:Start()
 		for key, value in pairs(snapshot) do
 			cache[key] = value
 		end
-		-- Toggle visibility segue o state atual
-		if typeof(snapshot.state) == "string" then
-			self._isLobby = snapshot.state ~= Constants.PlayerState.InArena
-			self:_updateToggleVisibility()
-			-- Se saiu pro arena com painel aberto, fecha
-			if not self._isLobby and self._isOpen then
-				self:Close()
-			end
+		-- Se saiu pro arena com painel aberto, fecha (gameplay não pode ser
+		-- interrompido por overlay modal).
+		if typeof(snapshot.state) == "string" and snapshot.state == Constants.PlayerState.InArena and self._isOpen then
+			self:Close()
 		end
 		if self._isOpen then
 			self:_render()

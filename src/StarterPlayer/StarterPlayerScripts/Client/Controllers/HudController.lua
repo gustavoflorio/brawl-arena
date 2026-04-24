@@ -26,10 +26,12 @@ local HudController = {}
 HudController._stockPanel = nil
 HudController._currentState = nil :: string?
 HudController._flagEnabled = true
+HudController._controllers = nil :: { [string]: any }?
 
 -- New HUD refs
 HudController._lobbyProgressPanel = nil :: Frame?
-HudController._rankBadge = nil :: Frame?
+-- Rank badge é TextButton: clicável, abre o StatsPanelController.
+HudController._rankBadge = nil :: TextButton?
 HudController._rankLabel = nil :: TextLabel?
 HudController._rankAccent = nil :: Frame?
 HudController._levelLabel = nil :: TextLabel?
@@ -71,8 +73,10 @@ local function buildNewHud(self)
 	fullGui.Parent = playerGui
 	self._fullGui = fullGui
 
-	-- Rank badge (top-left, inset-respecting)
-	local rankBadge = Instance.new("Frame")
+	-- Rank badge (top-left, inset-respecting). TextButton pra poder clicar
+	-- e abrir o StatsPanel; Text vazio + AutoButtonColor false pra visual
+	-- ficar idêntico a um Frame (cor não pisca no hover).
+	local rankBadge = Instance.new("TextButton")
 	rankBadge.Name = "RankBadge"
 	rankBadge.AnchorPoint = Vector2.new(0, 0)
 	rankBadge.Position = UDim2.new(0, 16, 0, 16)
@@ -80,8 +84,18 @@ local function buildNewHud(self)
 	rankBadge.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 	rankBadge.BackgroundTransparency = 0.25
 	rankBadge.BorderSizePixel = 0
+	rankBadge.Text = ""
+	rankBadge.AutoButtonColor = false
 	rankBadge.Visible = false
 	rankBadge.Parent = insetGui
+
+	rankBadge.MouseButton1Click:Connect(function()
+		local controllers = self._controllers
+		local statsPanel = controllers and controllers.StatsPanelController
+		if statsPanel and type(statsPanel.Toggle) == "function" then
+			statsPanel:Toggle()
+		end
+	end)
 
 	local rankCorner = Instance.new("UICorner")
 	rankCorner.CornerRadius = UDim.new(0, 10)
@@ -450,7 +464,9 @@ end
 
 -- ================= LIFECYCLE =================
 
-function HudController:Init(_controllers: { [string]: any }) end
+function HudController:Init(controllers: { [string]: any })
+	self._controllers = controllers
+end
 
 function HudController:Start()
 	self._flagEnabled = readFlag()
