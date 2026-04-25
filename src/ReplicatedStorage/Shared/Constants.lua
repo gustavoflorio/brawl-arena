@@ -7,6 +7,7 @@ local Constants = {
 		State = "BrawlState",
 		Events = "BrawlEvents",
 		Arena = "BrawlArenaState",
+		Shop = "BrawlShop",
 	},
 	Actions = {
 		Punch = "Punch",
@@ -189,6 +190,7 @@ local Constants = {
 	Tags = {
 		JumpThroughPlatform = "BrawlJumpThrough",
 		DonateKiosk = "BrawlDonateKiosk",
+		ShopKiosk = "BrawlShopKiosk",
 		FadingLabel = "BrawlFadingLabel",
 	},
 	CharacterAttributes = {
@@ -260,6 +262,26 @@ local Constants = {
 		DisplayPrice = 100,
 		ProductName = "Support the Dev",
 	},
+	Shop = {
+		-- Saldo inicial concedido a profile novo. Currency só é ganha jogando
+		-- (sistema de obtenção fora desta entrega); mantemos 0 como default.
+		StarterCurrency = 0,
+		-- Limite de transações simultâneas — single-flight por player garante
+		-- que dois cliques rápidos no botão "Comprar" não duplicam cobrança.
+		-- ProfileService já garante single-server-ownership do profile.
+		BuyActions = {
+			Buy = "Buy",
+			Equip = "Equip",
+			GetCatalog = "GetCatalog",
+		},
+		BuyResultReasons = {
+			AlreadyOwned = "AlreadyOwned",
+			InsufficientFunds = "InsufficientFunds",
+			UnknownClass = "UnknownClass",
+			InTransaction = "InTransaction",
+			NotInLobby = "NotInLobby",
+		},
+	},
 	FadingLabel = {
 		NearDistance = 20,
 		FarDistance = 80,
@@ -274,6 +296,8 @@ local Constants = {
 			Donate = "donate",
 			EnterArena = "enter_arena",
 			ReturnToLobby = "return_to_lobby",
+			ClassPurchased = "class_purchased",
+			ClassEquipped = "class_equipped",
 		},
 	},
 	Assets = {

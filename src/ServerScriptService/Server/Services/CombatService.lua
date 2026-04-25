@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
+local Classes = require(sharedFolder:WaitForChild("Classes"))
 
 type Services = { [string]: any }
 
@@ -128,6 +129,23 @@ local function resolveFacing(root: BasePart): Vector3
 		return Vector3.new(-1, 0, 0)
 	end
 	return Vector3.new(1, 0, 0)
+end
+
+function CombatService:_getMovesFor(player: Player): { [string]: any }
+	-- Resolve moveset baseado na classe equipada do player. Fallback pra
+	-- classe default se o profile ainda não carregou ou se a classe equipada
+	-- some do registry (defesa em profundidade — não deveria acontecer com
+	-- a migration certa).
+	local services = self._services :: Services
+	local playerData = services.PlayerDataService
+	if playerData and playerData.GetEquippedClass then
+		local classId = playerData:GetEquippedClass(player)
+		local classDef = Classes.GetClass(classId)
+		if classDef then
+			return classDef.Moves
+		end
+	end
+	return Classes.GetDefault().Moves
 end
 
 function CombatService:_checkRateLimit(player: Player): boolean
@@ -399,7 +417,7 @@ function CombatService:_resolveRequestedMove(player: Player, requestedKey: strin
 	local active = self._activeSwings[player]
 	local last = self._lastCombo[player]
 	local now = os.clock()
-	local moves = Constants.Combat.Moves
+	local moves = self:_getMovesFor(player)
 
 	if not moves[requestedKey] then
 		return nil
@@ -430,7 +448,8 @@ function CombatService:_resolveRequestedMove(player: Player, requestedKey: strin
 end
 
 function CombatService:_startSwing(player: Player, moveKey: string, clientTime: number?)
-	local move = Constants.Combat.Moves[moveKey] :: MoveData
+	local moves = self:_getMovesFor(player)
+	local move = moves[moveKey] :: MoveData
 	local now = os.clock()
 	local serverNow = Workspace:GetServerTimeNow()
 

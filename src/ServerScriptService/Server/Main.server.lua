@@ -53,6 +53,15 @@ local function ensureRemotes()
 			remote.Parent = folder
 		end
 	end
+
+	-- BrawlShop é RemoteFunction (request/response): UI precisa de ack
+	-- síncrona pra exibir resultado da compra/equip. Outros remotes são
+	-- fire-and-forget (state push, events).
+	if not folder:FindFirstChild(Constants.Remotes.Shop) then
+		local shopRemote = Instance.new("RemoteFunction")
+		shopRemote.Name = Constants.Remotes.Shop
+		shopRemote.Parent = folder
+	end
 end
 
 ensureRemotes()

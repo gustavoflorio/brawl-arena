@@ -30,6 +30,22 @@ local function getRemote(name: string): RemoteEvent?
 	return nil
 end
 
+local function getRemoteFunction(name: string): RemoteFunction?
+	local folder = resolveRemotesFolder()
+	if not folder then
+		return nil
+	end
+	local remote = folder:FindFirstChild(name)
+	if remote and remote:IsA("RemoteFunction") then
+		return remote
+	end
+	local awaited = folder:WaitForChild(name, 5)
+	if awaited and awaited:IsA("RemoteFunction") then
+		return awaited
+	end
+	return nil
+end
+
 function Remotes.GetRequestRemote(): RemoteEvent?
 	return getRemote(Constants.Remotes.Request)
 end
@@ -44,6 +60,10 @@ end
 
 function Remotes.GetArenaRemote(): RemoteEvent?
 	return getRemote(Constants.Remotes.Arena)
+end
+
+function Remotes.GetShopRemote(): RemoteFunction?
+	return getRemoteFunction(Constants.Remotes.Shop)
 end
 
 return Remotes

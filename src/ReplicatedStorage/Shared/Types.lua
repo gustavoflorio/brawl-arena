@@ -13,6 +13,37 @@ export type Profile = {
 	TotalDeaths: number,
 	DonationCount: number,
 	LastLoginTimestamp: number,
+	-- Classes/economy (ClassSchema v1)
+	Currency: number,
+	UnlockedClasses: { [string]: boolean },
+	EquippedClass: string,
+	ClassSchemaVersion: number,
+}
+
+export type ClassCatalogEntry = {
+	id: string,
+	displayName: string,
+	description: string,
+	iconAssetId: string,
+	price: number,
+	owned: boolean,
+	equipped: boolean,
+}
+
+export type ShopCatalogPayload = {
+	balance: number,
+	classes: { ClassCatalogEntry },
+}
+
+export type ShopBuyResult = {
+	success: boolean,
+	reason: string?,
+	newBalance: number?,
+}
+
+export type ShopEquipResult = {
+	success: boolean,
+	reason: string?,
 }
 
 export type RankBrief = {

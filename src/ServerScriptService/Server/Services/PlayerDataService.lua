@@ -15,6 +15,8 @@ local ProfileService = require(modulesFolder:WaitForChild("ProfileService"))
 type Services = { [string]: any }
 type Profile = Types.Profile
 
+local DEFAULT_CLASS_ID = "Boxer"
+
 local PROFILE_TEMPLATE: Profile = {
 	XP = 0,
 	Level = 1,
@@ -28,9 +30,15 @@ local PROFILE_TEMPLATE: Profile = {
 	TotalDeaths = 0,
 	DonationCount = 0,
 	LastLoginTimestamp = 0,
+	-- Classes/economy (ClassSchema v1)
+	Currency = 0,
+	UnlockedClasses = { [DEFAULT_CLASS_ID] = true },
+	EquippedClass = DEFAULT_CLASS_ID,
+	ClassSchemaVersion = 0, -- migration bumps to 1 on load
 }
 
 local CURRENT_RANK_SCHEMA = 2
+local CURRENT_CLASS_SCHEMA = 1
 
 local function migrateRankSchema(data)
 	if (data.RankSchemaVersion or 0) >= CURRENT_RANK_SCHEMA then
@@ -45,6 +53,27 @@ local function migrateRankSchema(data)
 	data.SeriesKind = "none"
 	data.SeriesProgress = 0
 	data.RankSchemaVersion = CURRENT_RANK_SCHEMA
+end
+
+local function migrateClassSchema(data)
+	-- v0 → v1: garante currency, unlocked set com Boxer, e classe equipada válida.
+	-- Profiles legados (pré-classes) caem aqui no primeiro load. Reconcile já
+	-- preencheu defaults da template; esta migration corrige inconsistências.
+	if (data.ClassSchemaVersion or 0) >= CURRENT_CLASS_SCHEMA then
+		return
+	end
+	if typeof(data.Currency) ~= "number" then
+		data.Currency = 0
+	end
+	if typeof(data.UnlockedClasses) ~= "table" then
+		data.UnlockedClasses = {}
+	end
+	-- Boxer sempre desbloqueada — invariante do design (default free).
+	data.UnlockedClasses[DEFAULT_CLASS_ID] = true
+	if typeof(data.EquippedClass) ~= "string" or not data.UnlockedClasses[data.EquippedClass] then
+		data.EquippedClass = DEFAULT_CLASS_ID
+	end
+	data.ClassSchemaVersion = CURRENT_CLASS_SCHEMA
 end
 
 local PlayerDataService = {}
@@ -104,6 +133,7 @@ function PlayerDataService:_loadProfile(player: Player)
 	profile:AddUserId(player.UserId)
 	profile:Reconcile()
 	migrateRankSchema(profile.Data)
+	migrateClassSchema(profile.Data)
 	profile:ListenToRelease(function()
 		self._profiles[player] = nil
 		if player.Parent == Players then
@@ -269,6 +299,81 @@ function PlayerDataService:XPForNextLevel(player: Player): number
 		return 0
 	end
 	return xpForLevelUp(data.Level)
+end
+
+-- ===== Classes / Currency =====
+
+function PlayerDataService:GetCurrency(player: Player): number
+	local data = self:GetProfile(player)
+	if not data then
+		return 0
+	end
+	return data.Currency
+end
+
+function PlayerDataService:AddCurrency(player: Player, amount: number): number
+	-- Soma signed. Negativo é aceito (compras), mas saldo nunca fica < 0.
+	local data = self:GetProfile(player)
+	if not data then
+		return 0
+	end
+	data.Currency = math.max(0, data.Currency + amount)
+	return data.Currency
+end
+
+function PlayerDataService:GetEquippedClass(player: Player): string
+	local data = self:GetProfile(player)
+	if not data then
+		return DEFAULT_CLASS_ID
+	end
+	return data.EquippedClass
+end
+
+function PlayerDataService:IsClassUnlocked(player: Player, classId: string): boolean
+	local data = self:GetProfile(player)
+	if not data then
+		return false
+	end
+	return data.UnlockedClasses[classId] == true
+end
+
+function PlayerDataService:UnlockClass(player: Player, classId: string): boolean
+	local data = self:GetProfile(player)
+	if not data then
+		return false
+	end
+	if data.UnlockedClasses[classId] then
+		return false
+	end
+	data.UnlockedClasses[classId] = true
+	return true
+end
+
+function PlayerDataService:SetEquippedClass(player: Player, classId: string): boolean
+	-- Caller é responsável por validar que classId existe no Classes registry.
+	-- Aqui só checamos que o player desbloqueou — defesa em profundidade.
+	local data = self:GetProfile(player)
+	if not data then
+		return false
+	end
+	if not data.UnlockedClasses[classId] then
+		return false
+	end
+	data.EquippedClass = classId
+	return true
+end
+
+function PlayerDataService:GetUnlockedClasses(player: Player): { [string]: boolean }
+	local data = self:GetProfile(player)
+	if not data then
+		return {}
+	end
+	-- Retorna cópia rasa pra evitar mutação externa do profile.
+	local copy: { [string]: boolean } = {}
+	for k, v in pairs(data.UnlockedClasses) do
+		copy[k] = v
+	end
+	return copy
 end
 
 return PlayerDataService
