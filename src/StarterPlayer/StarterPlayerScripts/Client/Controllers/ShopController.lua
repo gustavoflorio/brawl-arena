@@ -7,16 +7,16 @@
 -- no topo do arquivo). Motion contida em widgets (pulse, fade) — sem afetar tela.
 
 local CollectionService = game:GetService("CollectionService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Types = require(sharedFolder:WaitForChild("Types"))
+local Classes = require(sharedFolder:WaitForChild("Classes"))
 
 type ClassCatalogEntry = Types.ClassCatalogEntry
 type ShopCatalogPayload = Types.ShopCatalogPayload
@@ -39,6 +39,10 @@ local FONT_DISPLAY = Enum.Font.GothamBlack
 local FONT_HEADING = Enum.Font.GothamBlack
 local FONT_LABEL = Enum.Font.GothamBold
 local FONT_BODY = Enum.Font.Gotham
+
+local CARD_WIDTH = 240
+local CARD_HEIGHT = 400
+local CARD_HERO_HEIGHT = 200
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -94,121 +98,150 @@ end
 local function createCard(entry: ClassCatalogEntry): Frame
 	local card = Instance.new("Frame")
 	card.Name = entry.id
-	card.Size = UDim2.new(1, -16, 0, 132)
+	card.Size = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT)
 	card.BackgroundColor3 = COLOR_BG_ELEVATED
 	card.BorderSizePixel = 0
-	corner(card, 12)
+	card.ClipsDescendants = true
+	corner(card, 14)
 	stroke(card, COLOR_OUTLINE, 2)
 
-	local pad = Instance.new("UIPadding")
-	pad.PaddingTop = UDim.new(0, 12)
-	pad.PaddingBottom = UDim.new(0, 12)
-	pad.PaddingLeft = UDim.new(0, 14)
-	pad.PaddingRight = UDim.new(0, 14)
-	pad.Parent = card
+	-- Hero: imagem da classe (full-bleed topo). Quando iconAssetId vazio, mostra
+	-- placeholder com a inicial em fonte chunky. Pronto pro user upar assets sem
+	-- mexer no layout.
+	--
+	-- Trick pros corners arredondados: hero tem UICorner 14 (igual ao card) e
+	-- altura HERO + 14, estendendo 14px abaixo da divisa visível. O Content
+	-- abaixo é opaco (BG_ELEVATED) e cobre essa extensão, escondendo os corners
+	-- arredondados de baixo. Resultado: hero curva certo no topo, transição
+	-- limpa pra content (sem borda quebrada).
+	local hero = Instance.new("Frame")
+	hero.Name = "Hero"
+	hero.Size = UDim2.new(1, 0, 0, CARD_HERO_HEIGHT + 14)
+	hero.Position = UDim2.new(0, 0, 0, 0)
+	hero.BackgroundColor3 = COLOR_BG_DEEP
+	hero.BorderSizePixel = 0
+	hero.ClipsDescendants = true
+	hero.Parent = card
+	corner(hero, 14)
 
-	-- Linha 1: nome + state badge
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 32)
-	header.Position = UDim2.new(0, 0, 0, 0)
-	header.BackgroundTransparency = 1
-	header.Parent = card
+	local heroImage = Instance.new("ImageLabel")
+	heroImage.Name = "HeroImage"
+	heroImage.Size = UDim2.new(1, 0, 0, CARD_HERO_HEIGHT)
+	heroImage.Position = UDim2.new(0, 0, 0, 0)
+	heroImage.BackgroundTransparency = 1
+	heroImage.ScaleType = Enum.ScaleType.Crop
+	heroImage.Image = (entry.iconAssetId ~= "" and ("rbxassetid://" .. entry.iconAssetId)) or ""
+	heroImage.Visible = entry.iconAssetId ~= ""
+	heroImage.Parent = hero
+
+	local placeholder = Instance.new("TextLabel")
+	placeholder.Name = "Placeholder"
+	placeholder.Size = UDim2.new(1, 0, 0, CARD_HERO_HEIGHT)
+	placeholder.Position = UDim2.new(0, 0, 0, 0)
+	placeholder.BackgroundTransparency = 1
+	placeholder.Font = FONT_DISPLAY
+	placeholder.Text = string.upper(string.sub(entry.displayName, 1, 1))
+	placeholder.TextSize = 110
+	placeholder.TextColor3 = COLOR_TEXT_DIM
+	placeholder.TextStrokeColor3 = COLOR_OUTLINE
+	placeholder.TextStrokeTransparency = 0.4
+	placeholder.Visible = entry.iconAssetId == ""
+	placeholder.Parent = hero
+
+	-- Content area abaixo do hero. UICorner 14 (igual ao card) faz os corners
+	-- de baixo seguirem a curvatura. Os corners de cima curvam pra dentro mas
+	-- ficam exatamente sobre os corners de baixo do hero (mesma posição/raio),
+	-- então a transição hero↔content fica visualmente alinhada com a curva.
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.Size = UDim2.new(1, 0, 1, -CARD_HERO_HEIGHT)
+	content.Position = UDim2.new(0, 0, 0, CARD_HERO_HEIGHT)
+	content.BackgroundColor3 = COLOR_BG_ELEVATED
+	content.BackgroundTransparency = 0
+	content.BorderSizePixel = 0
+	content.Parent = card
+	corner(content, 14)
+
+	local contentPad = Instance.new("UIPadding")
+	contentPad.PaddingTop = UDim.new(0, 14)
+	contentPad.PaddingBottom = UDim.new(0, 14)
+	contentPad.PaddingLeft = UDim.new(0, 14)
+	contentPad.PaddingRight = UDim.new(0, 14)
+	contentPad.Parent = content
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "Name"
-	nameLabel.Size = UDim2.new(0.6, 0, 1, 0)
+	nameLabel.Size = UDim2.new(1, 0, 0, 40)
 	nameLabel.Position = UDim2.new(0, 0, 0, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = FONT_DISPLAY
 	nameLabel.Text = string.upper(entry.displayName)
-	nameLabel.TextSize = 28
+	nameLabel.TextSize = 36
 	nameLabel.TextColor3 = COLOR_TEXT_PURE
 	nameLabel.TextStrokeColor3 = COLOR_OUTLINE
-	nameLabel.TextStrokeTransparency = 0.6
+	nameLabel.TextStrokeTransparency = 0.4
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-	nameLabel.TextYAlignment = Enum.TextYAlignment.Center
-	nameLabel.Parent = header
+	nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+	nameLabel.Parent = content
 
-	local badge = Instance.new("TextLabel")
-	badge.Name = "Badge"
-	badge.AnchorPoint = Vector2.new(1, 0.5)
-	badge.Position = UDim2.new(1, 0, 0.5, 0)
-	badge.Size = UDim2.new(0, 110, 0, 26)
-	badge.BackgroundColor3 = COLOR_BG_SURFACE
-	badge.BorderSizePixel = 0
-	badge.Font = FONT_LABEL
-	badge.TextSize = 13
-	badge.TextColor3 = COLOR_TEXT_DIM
-	badge.Text = ""
-	corner(badge, 6)
-	badge.Parent = header
-
-	-- Linha 2: descrição
 	local desc = Instance.new("TextLabel")
 	desc.Name = "Desc"
-	desc.Position = UDim2.new(0, 0, 0, 38)
-	desc.Size = UDim2.new(1, 0, 0, 36)
+	desc.Position = UDim2.new(0, 0, 0, 46)
+	desc.Size = UDim2.new(1, 0, 0, 60)
 	desc.BackgroundTransparency = 1
 	desc.Font = FONT_BODY
 	desc.Text = entry.description
-	desc.TextSize = 14
+	desc.TextSize = 18
 	desc.TextColor3 = COLOR_TEXT_MUTED
 	desc.TextXAlignment = Enum.TextXAlignment.Left
 	desc.TextYAlignment = Enum.TextYAlignment.Top
 	desc.TextWrapped = true
-	desc.Parent = card
+	desc.Parent = content
 
-	-- Linha 3: action button (right-aligned)
 	local actionBtn = Instance.new("TextButton")
 	actionBtn.Name = "ActionBtn"
-	actionBtn.AnchorPoint = Vector2.new(1, 1)
-	actionBtn.Position = UDim2.new(1, 0, 1, 0)
-	actionBtn.Size = UDim2.new(0, 180, 0, 40)
+	actionBtn.AnchorPoint = Vector2.new(0, 1)
+	actionBtn.Position = UDim2.new(0, 0, 1, 0)
+	actionBtn.Size = UDim2.new(1, 0, 0, 56)
 	actionBtn.BackgroundColor3 = COLOR_BG_SURFACE
 	actionBtn.BorderSizePixel = 0
 	actionBtn.AutoButtonColor = false
 	actionBtn.Font = FONT_LABEL
 	actionBtn.Text = ""
-	actionBtn.TextSize = 16
+	actionBtn.TextSize = 22
 	actionBtn.TextColor3 = COLOR_TEXT_PRIMARY
-	corner(actionBtn, 8)
+	corner(actionBtn, 10)
 	stroke(actionBtn, COLOR_OUTLINE, 1)
-	actionBtn.Parent = card
+	actionBtn.Parent = content
 
 	return card
 end
 
 local function setCardState(card: Frame, entry: ClassCatalogEntry, balance: number, busy: boolean)
-	local header = card:FindFirstChild("Header")
-	local badge = header and header:FindFirstChild("Badge") :: any
-	local btn = card:FindFirstChild("ActionBtn") :: any
-	if not badge or not btn or not badge:IsA("TextLabel") or not btn:IsA("TextButton") then
+	local content = card:FindFirstChild("Content")
+	local btn = content and content:FindFirstChild("ActionBtn") :: any
+	local cardStroke = card:FindFirstChildOfClass("UIStroke")
+	if not btn or not btn:IsA("TextButton") or not cardStroke then
 		return
 	end
 
 	if entry.equipped then
-		badge.Text = "EQUIPPED"
-		badge.TextColor3 = COLOR_SUCCESS
-		badge.BackgroundColor3 = COLOR_BG_DEEP
 		btn.Text = "EQUIPPED"
-		btn.TextColor3 = COLOR_TEXT_DIM
+		btn.TextColor3 = COLOR_SUCCESS
 		btn.BackgroundColor3 = COLOR_BG_DEEP
 		btn.AutoButtonColor = false
 		btn.Active = false
+		cardStroke.Color = COLOR_SUCCESS
+		cardStroke.Thickness = 3
 	elseif entry.owned then
-		badge.Text = "OWNED"
-		badge.TextColor3 = COLOR_INFO
-		badge.BackgroundColor3 = COLOR_BG_DEEP
 		btn.Text = "EQUIP"
 		btn.TextColor3 = COLOR_TEXT_PURE
 		btn.BackgroundColor3 = COLOR_INFO
 		btn.AutoButtonColor = true
 		btn.Active = not busy
+		cardStroke.Color = COLOR_OUTLINE
+		cardStroke.Thickness = 2
 	else
-		badge.Text = "LOCKED"
-		badge.TextColor3 = COLOR_TEXT_DIM
-		badge.BackgroundColor3 = COLOR_BG_DEEP
 		if balance >= entry.price then
 			btn.Text = string.format("BUY  %d", entry.price)
 			btn.TextColor3 = COLOR_TEXT_PURE
@@ -216,12 +249,16 @@ local function setCardState(card: Frame, entry: ClassCatalogEntry, balance: numb
 			btn.AutoButtonColor = true
 			btn.Active = not busy
 		else
-			btn.Text = string.format("NEED %d MORE", entry.price - balance)
-			btn.TextColor3 = COLOR_TEXT_DIM
+			-- Saldo insuficiente: botão fica clicável e dispara o coin pack
+			-- prompt no _onCardAction (UI nativa do Roblox pra DevProduct).
+			btn.Text = string.format("%d COINS", entry.price)
+			btn.TextColor3 = COLOR_WARNING
 			btn.BackgroundColor3 = COLOR_BG_DEEP
-			btn.AutoButtonColor = false
-			btn.Active = false
+			btn.AutoButtonColor = true
+			btn.Active = not busy
 		end
+		cardStroke.Color = COLOR_OUTLINE
+		cardStroke.Thickness = 2
 	end
 end
 
@@ -250,39 +287,49 @@ local function buildGui(): ScreenGui
 	modal.Name = "Modal"
 	modal.AnchorPoint = Vector2.new(0.5, 0.5)
 	modal.Position = UDim2.new(0.5, 0, 0.5, 0)
-	modal.Size = UDim2.new(0, 540, 0, 540)
+	modal.Size = UDim2.new(0.92, 0, 0, 620)
 	modal.BackgroundColor3 = COLOR_BG_SURFACE
 	modal.BorderSizePixel = 0
+	-- Active = true faz o modal sinkar input. Sem isso, cliques na área do modal
+	-- também disparam dim.InputBegan (Frame irmão atrás), fechando a UI mesmo
+	-- quando o user clica dentro dela.
+	modal.Active = true
 	modal.Parent = gui
 	corner(modal, 20)
 	stroke(modal, COLOR_OUTLINE, 3)
 
 	local aspect = Instance.new("UISizeConstraint")
-	aspect.MaxSize = Vector2.new(560, 600)
-	aspect.MinSize = Vector2.new(320, 360)
+	aspect.MaxSize = Vector2.new(900, 680)
+	aspect.MinSize = Vector2.new(360, 560)
 	aspect.Parent = modal
+
+	-- UIScale pro pop-in animation (não tween Size pra não brigar com Scale-based width)
+	local modalScale = Instance.new("UIScale")
+	modalScale.Name = "PopScale"
+	modalScale.Scale = 1
+	modalScale.Parent = modal
 
 	padding(modal, 20)
 
 	-- Header: title + balance + close
 	local headerRow = Instance.new("Frame")
 	headerRow.Name = "Header"
-	headerRow.Size = UDim2.new(1, 0, 0, 44)
+	headerRow.Size = UDim2.new(1, 0, 0, 60)
 	headerRow.Position = UDim2.new(0, 0, 0, 0)
 	headerRow.BackgroundTransparency = 1
 	headerRow.Parent = modal
 
 	local title = Instance.new("TextLabel")
 	title.Name = "Title"
-	title.Size = UDim2.new(0.5, 0, 1, 0)
+	title.Size = UDim2.new(0.55, 0, 1, 0)
 	title.Position = UDim2.new(0, 0, 0, 0)
 	title.BackgroundTransparency = 1
-	title.Font = FONT_DISPLAY
-	title.Text = "SHOP"
-	title.TextSize = 36
+	title.Font = FONT_HEADING
+	title.Text = "CHANGE CLASS"
+	title.TextSize = 32
 	title.TextColor3 = COLOR_TEXT_PURE
 	title.TextStrokeColor3 = COLOR_OUTLINE
-	title.TextStrokeTransparency = 0.4
+	title.TextStrokeTransparency = 0.3
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.TextYAlignment = Enum.TextYAlignment.Center
 	title.Parent = headerRow
@@ -290,16 +337,16 @@ local function buildGui(): ScreenGui
 	local balance = Instance.new("TextLabel")
 	balance.Name = "Balance"
 	balance.AnchorPoint = Vector2.new(1, 0.5)
-	balance.Position = UDim2.new(1, -56, 0.5, 0)
-	balance.Size = UDim2.new(0, 200, 0, 36)
+	balance.Position = UDim2.new(1, -68, 0.5, 0)
+	balance.Size = UDim2.new(0, 240, 0, 48)
 	balance.BackgroundColor3 = COLOR_BG_DEEP
 	balance.BorderSizePixel = 0
 	balance.Font = FONT_LABEL
 	balance.Text = "0  COINS"
-	balance.TextSize = 18
+	balance.TextSize = 24
 	balance.TextColor3 = COLOR_WARNING
 	balance.TextXAlignment = Enum.TextXAlignment.Center
-	corner(balance, 6)
+	corner(balance, 8)
 	stroke(balance, COLOR_OUTLINE, 1)
 	balance.Parent = headerRow
 
@@ -307,48 +354,59 @@ local function buildGui(): ScreenGui
 	close.Name = "Close"
 	close.AnchorPoint = Vector2.new(1, 0.5)
 	close.Position = UDim2.new(1, 0, 0.5, 0)
-	close.Size = UDim2.new(0, 44, 0, 44)
+	close.Size = UDim2.new(0, 56, 0, 56)
 	close.BackgroundColor3 = COLOR_BG_DEEP
 	close.BorderSizePixel = 0
 	close.Font = FONT_HEADING
 	close.Text = "X"
-	close.TextSize = 20
+	close.TextSize = 28
 	close.TextColor3 = COLOR_TEXT_PRIMARY
-	corner(close, 8)
+	corner(close, 10)
 	stroke(close, COLOR_OUTLINE, 1)
 	close.Parent = headerRow
 
 	-- Status row (mensagens de erro/feedback)
 	local status = Instance.new("TextLabel")
 	status.Name = "Status"
-	status.Size = UDim2.new(1, 0, 0, 22)
-	status.Position = UDim2.new(0, 0, 0, 50)
+	status.Size = UDim2.new(1, 0, 0, 28)
+	status.Position = UDim2.new(0, 0, 0, 68)
 	status.BackgroundTransparency = 1
 	status.Font = FONT_BODY
 	status.Text = ""
-	status.TextSize = 14
+	status.TextSize = 18
 	status.TextColor3 = COLOR_TEXT_MUTED
 	status.TextXAlignment = Enum.TextXAlignment.Left
 	status.Parent = modal
 
-	-- Cards container (scrolling pra robustez se vier mais classes)
+	-- Cards container: scroll horizontal pra acomodar N classes futuras
 	local cards = Instance.new("ScrollingFrame")
 	cards.Name = "Cards"
-	cards.Size = UDim2.new(1, 0, 1, -82)
-	cards.Position = UDim2.new(0, 0, 0, 76)
+	cards.Size = UDim2.new(1, 0, 1, -112)
+	cards.Position = UDim2.new(0, 0, 0, 112)
 	cards.BackgroundTransparency = 1
 	cards.BorderSizePixel = 0
 	cards.CanvasSize = UDim2.new()
-	cards.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	cards.ScrollBarThickness = 4
+	cards.AutomaticCanvasSize = Enum.AutomaticSize.X
+	cards.ScrollingDirection = Enum.ScrollingDirection.X
+	cards.ScrollBarThickness = 6
 	cards.ScrollBarImageColor3 = COLOR_TEXT_DIM
+	cards.ClipsDescendants = true
 	cards.Parent = modal
 
+	-- Padding interno pra strokes (especialmente o equipped 3px) não baterem
+	-- na borda do scroll, e pra reservar espaço da scrollbar abaixo dos cards.
+	local cardsPad = Instance.new("UIPadding")
+	cardsPad.PaddingTop = UDim.new(0, 6)
+	cardsPad.PaddingBottom = UDim.new(0, 18)
+	cardsPad.PaddingLeft = UDim.new(0, 6)
+	cardsPad.PaddingRight = UDim.new(0, 6)
+	cardsPad.Parent = cards
+
 	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Vertical
+	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 10)
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 16)
+	layout.VerticalAlignment = Enum.VerticalAlignment.Top
 	layout.Parent = cards
 
 	gui.Parent = playerGui
@@ -356,12 +414,27 @@ local function buildGui(): ScreenGui
 	close.Activated:Connect(function()
 		ShopController:Close()
 	end)
+	-- Backdrop close: cliques fora do modal fecham. Em vez de depender de
+	-- Active/sinking (que falha quando frames descendentes do modal não
+	-- propagam o sink), checamos explicitamente se o ponto do clique está
+	-- dentro do bounding box do modal. Se sim, ignora; senão, fecha.
 	dim.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch
 		then
-			ShopController:Close()
+			return
 		end
+		if ShopController._modalFrame then
+			local pos = input.Position
+			local modalPos = ShopController._modalFrame.AbsolutePosition
+			local modalSize = ShopController._modalFrame.AbsoluteSize
+			if pos.X >= modalPos.X and pos.X <= modalPos.X + modalSize.X
+				and pos.Y >= modalPos.Y and pos.Y <= modalPos.Y + modalSize.Y
+			then
+				return
+			end
+		end
+		ShopController:Close()
 	end)
 
 	return gui
@@ -387,9 +460,28 @@ end
 function ShopController:_fetchCatalog(): ShopCatalogPayload?
 	local result = self:_invokeShop({ action = ACTIONS.GetCatalog })
 	if typeof(result) == "table" and typeof(result.classes) == "table" then
-		return result :: ShopCatalogPayload
+		local catalog = result :: ShopCatalogPayload
+		-- Cache no _lastCatalog mesmo fora do flow do shop UI — outros
+		-- controllers (CombatFxController) leem equippedClassId via
+		-- GetEquippedClassId() pra montar lookup das anims por classe.
+		self._lastCatalog = catalog
+		return catalog
 	end
 	return nil
+end
+
+function ShopController:GetEquippedClassId(): string
+	-- Fonte de verdade do equipped class no client. Lê do catalog cached;
+	-- se ainda nao fetchou (race condition no boot), cai pro default.
+	local catalog = self._lastCatalog
+	if catalog then
+		for _, entry in ipairs(catalog.classes) do
+			if entry.equipped then
+				return entry.id
+			end
+		end
+	end
+	return Classes.GetDefaultId()
 end
 
 -- ===== Render =====
@@ -430,7 +522,8 @@ function ShopController:_render(catalog: ShopCatalogPayload)
 			card.Parent = self._cardsContainer
 			self._cards[entry.id] = card
 
-			local btn = card:FindFirstChild("ActionBtn") :: TextButton
+			local content = card:FindFirstChild("Content") :: Frame
+			local btn = content:FindFirstChild("ActionBtn") :: TextButton
 			btn.Activated:Connect(function()
 				ShopController:_onCardAction(entry.id)
 			end)
@@ -513,6 +606,21 @@ function ShopController:_onCardAction(classId: string)
 		return
 	end
 
+	-- Saldo insuficiente: dispara o prompt nativo do Roblox pro coin pack
+	-- (DevProduct configurado em Constants.Shop.CoinPack). ProcessReceipt no
+	-- server credita 500 coins; o catalog é refetchado quando o prompt fecha.
+	if not entry.owned and self._lastCatalog.balance < entry.price then
+		self:_setStatus("", COLOR_TEXT_MUTED)
+		local ok, err = pcall(function()
+			MarketplaceService:PromptProductPurchase(localPlayer, Constants.Shop.CoinPack.ProductId)
+		end)
+		if not ok then
+			warn("[ShopController] PromptProductPurchase failed:", err)
+			self:_setStatus("Could not open purchase prompt.", COLOR_ERROR)
+		end
+		return
+	end
+
 	self._busy = true
 	self:_setStatus("...", COLOR_TEXT_MUTED)
 
@@ -547,6 +655,18 @@ function ShopController:_onCardAction(classId: string)
 	end
 end
 
+-- Refetch externo: outros controllers (ex: DevController após grant coins)
+-- chamam isto pra forçar refresh quando o shop tá visível.
+function ShopController:_refreshIfOpen()
+	if not self._open then
+		return
+	end
+	local refreshed = self:_fetchCatalog()
+	if refreshed then
+		self:_render(refreshed)
+	end
+end
+
 -- ===== Open / Close =====
 
 function ShopController:Open()
@@ -557,14 +677,17 @@ function ShopController:Open()
 	self._gui.Enabled = true
 	self:_setStatus("", COLOR_TEXT_MUTED)
 
-	-- Pop-in animation no modal
+	-- Pop-in animation no modal (via UIScale pra preservar a largura escalável)
 	if self._modalFrame then
-		self._modalFrame.Size = UDim2.new(0, 480, 0, 480)
-		TweenService:Create(
-			self._modalFrame,
-			TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ Size = UDim2.new(0, 540, 0, 540) }
-		):Play()
+		local popScale = self._modalFrame:FindFirstChild("PopScale") :: UIScale?
+		if popScale then
+			popScale.Scale = 0.92
+			TweenService:Create(
+				popScale,
+				TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+				{ Scale = 1 }
+			):Play()
+		end
 	end
 
 	local catalog = self:_fetchCatalog()
@@ -620,6 +743,13 @@ end
 function ShopController:Init(_controllers: { [string]: any }) end
 
 function ShopController:Start()
+	-- Fetch inicial do catalog (assincrono): popula _lastCatalog mesmo sem o
+	-- user abrir o shop. Outros controllers leem equippedClassId via
+	-- GetEquippedClassId() — sem esse fetch o lookup cairia sempre no default.
+	task.spawn(function()
+		self:_fetchCatalog()
+	end)
+
 	self._gui = buildGui()
 	self._modalFrame = self._gui:FindFirstChild("Modal") :: Frame
 	local headerRow = self._modalFrame and self._modalFrame:FindFirstChild("Header") :: Frame?
@@ -627,14 +757,28 @@ function ShopController:Start()
 	self._statusLabel = self._modalFrame and self._modalFrame:FindFirstChild("Status") :: TextLabel?
 	self._cardsContainer = self._modalFrame and self._modalFrame:FindFirstChild("Cards") :: Frame?
 
-	-- ESC pra fechar
-	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then
-			return
+	-- Refetch catalog quando o prompt do coin pack fecha com sucesso.
+	-- ProcessReceipt no server pode terminar antes ou depois do prompt fechar
+	-- (timing variável especialmente em Studio), então fazemos polling: até 5
+	-- tentativas com delay crescente, parando assim que detectamos balance up.
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId: number, productId: number, isPurchased: boolean)
+		if userId ~= localPlayer.UserId then return end
+		if productId ~= Constants.Shop.CoinPack.ProductId then return end
+		if not isPurchased or not self._open then return end
+		local previousBalance = self._lastCatalog and self._lastCatalog.balance or 0
+		for attempt = 1, 5 do
+			task.wait(attempt == 1 and 0.3 or 0.6)
+			if not self._open then return end
+			local refreshed = self:_fetchCatalog()
+			if refreshed then
+				self:_render(refreshed)
+				if refreshed.balance > previousBalance then
+					self:_setStatus(string.format("+%d coins added!", Constants.Shop.CoinPack.Amount), COLOR_SUCCESS)
+					return
+				end
+			end
 		end
-		if self._open and input.KeyCode == Enum.KeyCode.Escape then
-			self:Close()
-		end
+		self:_setStatus("Coins not credited yet — try refreshing.", COLOR_WARNING)
 	end)
 
 	-- Bind prompts existentes + future

@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
+local Classes = require(sharedFolder:WaitForChild("Classes"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -37,11 +38,10 @@ local COMBAT_TRACKS: { TrackKind } = { "Jab1", "Jab2", "Jab3", "Heavy" }
 
 local HIT_REACTION_IDS: { string } = Constants.Assets.HitReactionAnimationIds
 
-local ANIM_SPECS: { { name: TrackKind, id: string } } = {
-	{ name = "Jab1", id = Constants.Combat.Moves.Jab1.AnimationId },
-	{ name = "Jab2", id = Constants.Combat.Moves.Jab2.AnimationId },
-	{ name = "Jab3", id = Constants.Combat.Moves.Jab3.AnimationId },
-	{ name = "Heavy", id = Constants.Combat.Moves.Heavy.AnimationId },
+-- Combat anim specs sao montados em runtime (Start) iterando Classes.GetCatalog()
+-- — cada classe pode ter AnimationIds proprios pros 4 combat moves. Os outros
+-- (Running/DodgeRoll/DoubleJump/HitReaction) sao globais por enquanto.
+local NON_COMBAT_ANIM_SPECS: { { name: string, id: string } } = {
 	{ name = "Running", id = Constants.Assets.RunAnimationId },
 	{ name = "DodgeRoll", id = Constants.Assets.DodgeRollAnimationId },
 	{ name = "DoubleJump", id = Constants.Assets.DoubleJumpAnimationId },
@@ -81,14 +81,17 @@ local function getAnimator(humanoid: Humanoid): Animator
 end
 
 function CombatFxController:_getAnimation(name: string, assetId: string): Animation
-	local cached = self._animCache[name]
+	-- Cache por assetId, NAO por name. Caso contrario "Jab1" do Boxer e "Jab1"
+	-- da Ballerina (mesma TrackKind, AnimationIds diferentes) colidem na cache
+	-- e o player so toca a primeira que carregou.
+	local cached = self._animCache[assetId]
 	if cached then
 		return cached
 	end
 	local anim = Instance.new("Animation")
 	anim.Name = "Brawl_" .. name
 	anim.AnimationId = assetId
-	self._animCache[name] = anim
+	self._animCache[assetId] = anim
 	return anim
 end
 
@@ -141,6 +144,27 @@ local function stopDefaultTracks(animator: Animator, keepTrack: AnimationTrack?)
 	end
 end
 
+function CombatFxController:_resolveCombatMove(kind: TrackKind): { AnimationId: string }?
+	-- Olha o Moves table da classe equipada (consulta ShopController) em vez
+	-- de Constants.Combat.Moves direto — assim Ballerina toca anims dela e
+	-- nao do Boxer. Fallback: classe default se ShopController ainda nao
+	-- fetchou ou se a classe equipada sumiu do registry.
+	local controllers = self._controllers
+	local shop = controllers and controllers.ShopController
+	local classId
+	if shop and type(shop.GetEquippedClassId) == "function" then
+		classId = shop:GetEquippedClassId()
+	else
+		classId = Classes.GetDefaultId()
+	end
+	local classDef = Classes.GetClass(classId) or Classes.GetDefault()
+	local move = classDef.Moves[kind]
+	if not move then
+		return nil
+	end
+	return move
+end
+
 function CombatFxController:IsPunching(): boolean
 	for _, kind in ipairs(COMBAT_TRACKS) do
 		local track = self._tracks[kind]
@@ -155,7 +179,7 @@ function CombatFxController:PlayLocalPunch(moveKey: string?)
 	-- moveKey: "Jab1" | "Jab2" | "Jab3" | "Heavy". Default "Jab1" por compat
 	-- com callers sem contexto de combo.
 	local kind: TrackKind = (moveKey :: any) or "Jab1"
-	local move = Constants.Combat.Moves[kind]
+	local move = self:_resolveCombatMove(kind)
 	if not move then
 		return
 	end
@@ -691,10 +715,27 @@ function CombatFxController:Start()
 	-- ContentProvider:PreloadAsync é obrigatório: sem preload,
 	-- Animator:LoadAnimation retorna tracks com length=0 silenciosamente
 	-- e nenhuma animação toca.
+	--
+	-- Preload anima 4 combat moves de TODA classe (nao so a equipada) — o
+	-- player pode trocar de classe a qualquer momento via shop, e sem preload
+	-- a primeira execução do golpe novo nao tocaria.
 	local preloadList: { Animation } = {}
-	for _, spec in ipairs(ANIM_SPECS) do
-		local anim = self:_getAnimation(spec.name, spec.id)
-		table.insert(preloadList, anim)
+	local seenAssets: { [string]: boolean } = {}
+	local function pushUnique(name: string, id: string)
+		if id == "" or seenAssets[id] then return end
+		seenAssets[id] = true
+		table.insert(preloadList, self:_getAnimation(name, id))
+	end
+	for _, spec in ipairs(NON_COMBAT_ANIM_SPECS) do
+		pushUnique(spec.name, spec.id)
+	end
+	for _, classDef in ipairs(Classes.GetCatalog()) do
+		for _, kind in ipairs(COMBAT_TRACKS) do
+			local move = classDef.Moves[kind]
+			if move and typeof(move.AnimationId) == "string" then
+				pushUnique(kind, move.AnimationId)
+			end
+		end
 	end
 	task.spawn(function()
 		local ok, err = pcall(function()

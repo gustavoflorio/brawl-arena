@@ -8,6 +8,7 @@ local Constants = {
 		Events = "BrawlEvents",
 		Arena = "BrawlArenaState",
 		Shop = "BrawlShop",
+		Dev = "BrawlDev",
 	},
 	Actions = {
 		Punch = "Punch",
@@ -262,6 +263,15 @@ local Constants = {
 		DisplayPrice = 100,
 		ProductName = "Support the Dev",
 	},
+	Dev = {
+		-- Whitelist de userIds com acesso ao painel dev (grant coins, etc).
+		-- Server valida — client UI só monta se o player tá nessa lista, mas
+		-- a checagem de verdade é no DevService antes de aplicar mutação.
+		UserIds = { 10593410938 },
+		Actions = {
+			GrantCoins = "GrantCoins",
+		},
+	},
 	Shop = {
 		-- Saldo inicial concedido a profile novo. Currency só é ganha jogando
 		-- (sistema de obtenção fora desta entrega); mantemos 0 como default.
@@ -281,6 +291,13 @@ local Constants = {
 			InTransaction = "InTransaction",
 			NotInLobby = "NotInLobby",
 		},
+		-- Coin pack: dev product que credita Currency direto. Botão "X COINS"
+		-- da loja dispara o prompt nativo do Roblox quando saldo insuficiente.
+		-- ProcessReceipt no MonetizationService faz o credit idempotente.
+		CoinPack = {
+			ProductId = 3582164856,
+			Amount = 500,
+		},
 	},
 	FadingLabel = {
 		NearDistance = 20,
@@ -298,6 +315,7 @@ local Constants = {
 			ReturnToLobby = "return_to_lobby",
 			ClassPurchased = "class_purchased",
 			ClassEquipped = "class_equipped",
+			CoinPackPurchased = "coin_pack_purchased",
 		},
 	},
 	Assets = {

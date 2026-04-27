@@ -66,4 +66,8 @@ function Remotes.GetShopRemote(): RemoteFunction?
 	return getRemoteFunction(Constants.Remotes.Shop)
 end
 
+function Remotes.GetDevRemote(): RemoteFunction?
+	return getRemoteFunction(Constants.Remotes.Dev)
+end
+
 return Remotes

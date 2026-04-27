@@ -15,6 +15,7 @@ local loadOrder = {
 	"ArenaService",
 	"CombatService",
 	"ShopService",
+	"DevService",
 	"TouchModeService",
 }
 

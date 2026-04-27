@@ -68,11 +68,20 @@ function MonetizationService:_processReceipt(receiptInfo: any): Enum.ProductPurc
 	local playerData = services.PlayerDataService
 	local analytics = services.AnalyticsService
 
+	print(string.format(
+		"[MonetizationService] ProcessReceipt fired: productId=%s playerId=%s purchaseId=%s",
+		tostring(receiptInfo.ProductId),
+		tostring(receiptInfo.PlayerId),
+		tostring(receiptInfo.PurchaseId)
+	))
+
 	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
 	if not player then
+		warn("[MonetizationService] player not found for receipt — NotProcessedYet")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	if not self._purchaseStore then
+		warn("[MonetizationService] _purchaseStore is nil — NotProcessedYet")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
@@ -100,6 +109,26 @@ function MonetizationService:_processReceipt(receiptInfo: any): Enum.ProductPurc
 				userId = player.UserId,
 				productId = receiptInfo.ProductId,
 				purchaseId = receiptInfo.PurchaseId,
+			})
+		end
+	elseif receiptInfo.ProductId == Constants.Shop.CoinPack.ProductId then
+		if not playerData:IsLoaded(player) then
+			warn("[MonetizationService] CoinPack: profile not loaded — NotProcessedYet")
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		local newBalance = playerData:AddCurrency(player, Constants.Shop.CoinPack.Amount)
+		print(string.format(
+			"[MonetizationService] CoinPack credited: +%d → newBalance=%d",
+			Constants.Shop.CoinPack.Amount,
+			newBalance
+		))
+		if analytics then
+			analytics:Log(Constants.Analytics.Events.CoinPackPurchased, {
+				userId = player.UserId,
+				productId = receiptInfo.ProductId,
+				purchaseId = receiptInfo.PurchaseId,
+				amount = Constants.Shop.CoinPack.Amount,
+				newBalance = newBalance,
 			})
 		end
 	else

@@ -62,6 +62,14 @@ local function ensureRemotes()
 		shopRemote.Name = Constants.Remotes.Shop
 		shopRemote.Parent = folder
 	end
+
+	-- BrawlDev: RemoteFunction pro painel dev (grant coins, etc). Validação
+	-- de whitelist é server-side em DevService.
+	if not folder:FindFirstChild(Constants.Remotes.Dev) then
+		local devRemote = Instance.new("RemoteFunction")
+		devRemote.Name = Constants.Remotes.Dev
+		devRemote.Parent = folder
+	end
 end
 
 ensureRemotes()
