@@ -54,6 +54,12 @@ function DevService:_handleInvoke(player: Player, request: any): any
 			"[DevService] GrantCoins: userId=%d amount=%d → newBalance=%d",
 			player.UserId, amount, newBalance
 		))
+		-- Push novo saldo via PublishState (HUD lê snapshot.currency). Mesmo
+		-- padrão do CoinSpawnService — sem isto a coin badge fica stale.
+		local arenaService = services.ArenaService
+		if arenaService and arenaService.PublishState then
+			arenaService:PublishState(player)
+		end
 		return { success = true, newBalance = newBalance }
 	end
 

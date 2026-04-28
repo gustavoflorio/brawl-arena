@@ -170,6 +170,7 @@ function ArenaService:PublishState(player: Player, summary: { [string]: any }?)
 		snapshot.level = profile.Level
 		snapshot.xp = profile.XP
 		snapshot.xpForNextLevel = xpForNext
+		snapshot.currency = profile.Currency
 		-- Stats pro painel de Stats (StatsPanelController): player-owned scalars
 		-- que não estão expostos nos atributos de character. Mantemos aqui porque
 		-- o PublishState já dispara em todos os momentos relevantes (kill, death,

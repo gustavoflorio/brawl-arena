@@ -34,6 +34,14 @@ type MoveData = {
 	HitKind: string,
 	Next: string?,
 	IsHeavy: boolean,
+	-- Trap moves: quando TrapDuration > 0, o move funciona como
+	-- "captura + DoT" em vez de hit instantâneo. Target leva hitstop pelo
+	-- TrapDuration inteiro (não pode mover/atacar/dodgear), Damage é
+	-- distribuído entre TrapTicks ao longo do trap, e knockback é skipado
+	-- (KnockbackMult ignorado). Ex: 64 palmas — Damage=20, Tick=8 ticks de
+	-- 2.5 dmg cada, target preso pela duração toda.
+	TrapDuration: number?,
+	TrapTicks: number?,
 }
 
 type ActiveSwing = {
@@ -343,11 +351,62 @@ function CombatService:_applyDI(kbVelocity: Vector3, inputX: number): Vector3
 	)
 end
 
+function CombatService:_applyTrapHit(puncher: Player, target: Player, move: MoveData)
+	-- Trap hit: target preso pela duração do trap, sem knockback. Damage
+	-- distribuído entre N ticks ao longo do trap. Cada tick bumpa HitSeq pra
+	-- gerar SFX/VFX de palma landing rítmica. HitStop é setado UMA VEZ com
+	-- duração total = TrapDuration; ticks só agregam damage.
+	local arenaService = (self._services :: Services).ArenaService
+	local targetCharacter = target.Character
+	local puncherCharacter = puncher.Character
+	if not targetCharacter then
+		return
+	end
+
+	local trapDuration = move.TrapDuration :: number
+	local ticks = move.TrapTicks or 8
+	local damagePerTick = move.Damage / ticks
+	local interval = trapDuration / ticks
+
+	targetCharacter:SetAttribute(Constants.CharacterAttributes.HitKind, move.HitKind)
+	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
+	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
+	applyHitStop(targetCharacter, trapDuration)
+
+	for i = 1, ticks do
+		task.delay((i - 1) * interval, function()
+			if target.Character ~= targetCharacter or not targetCharacter.Parent then
+				return
+			end
+			local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then
+				return
+			end
+			arenaService:AddDamage(target, damagePerTick)
+			bumpSeqAttribute(targetCharacter, Constants.CharacterAttributes.HitSeq)
+			arenaService:PublishState(target)
+		end)
+	end
+
+	-- Puncher leva hitstop curto (confirmação visual de hit), não a duração
+	-- inteira do trap — senão o puncher também ficaria parado 4s.
+	if puncherCharacter then
+		applyHitStop(puncherCharacter, math.min(0.15, move.HitstopBase * move.HitstopAttackerRatio))
+	end
+end
+
 function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, move: MoveData)
 	local arenaService = (self._services :: Services).ArenaService
 	local punchRoot = getCharacterRoot(puncher)
 	local targetRoot = getCharacterRoot(target)
 	if not punchRoot or not targetRoot then
+		return
+	end
+
+	-- Trap moves (Palmas etc) tem fluxo separado: prendem o target pela
+	-- duração inteira em vez de aplicar hit instantâneo + knockback.
+	if move.TrapDuration and move.TrapDuration > 0 then
+		self:_applyTrapHit(puncher, target, move)
 		return
 	end
 

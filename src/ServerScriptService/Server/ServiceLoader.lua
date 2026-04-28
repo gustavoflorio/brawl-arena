@@ -17,6 +17,7 @@ local loadOrder = {
 	"ShopService",
 	"DevService",
 	"TouchModeService",
+	"CoinSpawnService",
 }
 
 function ServiceLoader:Init()

@@ -20,6 +20,8 @@ local FLAG_NAME = "NewArenaHudEnabled"
 
 local TRANSITION_FADE_SECONDS = 0.15
 
+local COIN_ICON_ASSET = "rbxassetid://79708762867617"
+
 local HudController = {}
 
 -- Shared state
@@ -37,6 +39,9 @@ HudController._rankAccent = nil :: Frame?
 HudController._levelLabel = nil :: TextLabel?
 HudController._xpBarFill = nil :: Frame?
 HudController._xpText = nil :: TextLabel?
+-- Coins badge: persistente em lobby + arena. Atualizado via snapshot.currency.
+HudController._coinsBadge = nil :: Frame?
+HudController._coinsLabel = nil :: TextLabel?
 HudController._insetGui = nil :: ScreenGui?
 HudController._fullGui = nil :: ScreenGui?
 
@@ -135,20 +140,19 @@ local function buildNewHud(self)
 	-- Level/XP panel (top-right, colado literalmente no topo da tela no mobile).
 	-- Vai no fullGui (IgnoreGuiInset=true) pra renderizar sobre o inset da
 	-- status bar do sistema — mesmo padrao do BondUI do pet_tycoon.
+	-- Sem shell: container é só um agrupador de layout (BG transparente),
+	-- pra UI permanecer legível sobre o céu claro da arena. Legibilidade dos
+	-- textos garantida via TextStroke; o track da xp bar mantém BG escuro
+	-- próprio porque é elemento gráfico essencial pra ler progresso.
 	local progressPanel = Instance.new("Frame")
 	progressPanel.Name = "LevelXpPanel"
 	progressPanel.AnchorPoint = Vector2.new(1, 0)
 	progressPanel.Position = UDim2.new(1, -16, 0, 6)
 	progressPanel.Size = UDim2.new(0, 220, 0, 60)
-	progressPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	progressPanel.BackgroundTransparency = 0.25
+	progressPanel.BackgroundTransparency = 1
 	progressPanel.BorderSizePixel = 0
 	progressPanel.Visible = false
 	progressPanel.Parent = fullGui
-
-	local progressCorner = Instance.new("UICorner")
-	progressCorner.CornerRadius = UDim.new(0, 10)
-	progressCorner.Parent = progressPanel
 
 	local levelLabel = Instance.new("TextLabel")
 	levelLabel.Name = "Level"
@@ -160,6 +164,8 @@ local function buildNewHud(self)
 	levelLabel.TextSize = 15
 	levelLabel.Font = Enum.Font.GothamBold
 	levelLabel.TextXAlignment = Enum.TextXAlignment.Left
+	levelLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	levelLabel.TextStrokeTransparency = 0.35
 	levelLabel.Parent = progressPanel
 
 	local xpBarBg = Instance.new("Frame")
@@ -187,20 +193,104 @@ local function buildNewHud(self)
 
 	local xpText = Instance.new("TextLabel")
 	xpText.Name = "XpText"
-	xpText.Size = UDim2.new(1, -16, 0, 12)
+	xpText.Size = UDim2.new(1, -16, 0, 18)
 	xpText.Position = UDim2.new(0, 8, 0, 42)
 	xpText.BackgroundTransparency = 1
 	xpText.Text = "0 / 100 XP"
 	xpText.TextColor3 = Color3.fromRGB(200, 200, 220)
-	xpText.TextSize = 10
-	xpText.Font = Enum.Font.Gotham
+	xpText.TextSize = 15
+	xpText.Font = Enum.Font.GothamBold
 	xpText.TextXAlignment = Enum.TextXAlignment.Left
+	xpText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	xpText.TextStrokeTransparency = 0.4
 	xpText.Parent = progressPanel
 
 	self._lobbyProgressPanel = progressPanel
 	self._levelLabel = levelLabel
 	self._xpBarFill = xpBarFill
 	self._xpText = xpText
+
+	-- Coins badge: top-right, abaixo do LevelXp panel. Persistente em lobby
+	-- + arena (não esconde nas transições). Sem shell — só [icon][N][COINS]
+	-- alinhados horizontalmente via UIListLayout. AutomaticSize.X faz o
+	-- badge crescer/encolher com o número de dígitos sem reflow manual.
+	-- AnchorPoint (1, 0) + UIListLayout right-aligned mantém ancorado na
+	-- borda direita conforme o saldo escala.
+	local coinsBadge = Instance.new("Frame")
+	coinsBadge.Name = "CoinsBadge"
+	coinsBadge.AnchorPoint = Vector2.new(1, 0)
+	coinsBadge.Position = UDim2.new(1, -16, 0, 74) -- 6 (LevelXp top) + 60 (height) + 8 (gap)
+	coinsBadge.Size = UDim2.new(0, 0, 0, 28)
+	coinsBadge.AutomaticSize = Enum.AutomaticSize.X
+	coinsBadge.BackgroundTransparency = 1
+	coinsBadge.BorderSizePixel = 0
+	coinsBadge.Parent = fullGui
+
+	local coinsLayout = Instance.new("UIListLayout")
+	coinsLayout.FillDirection = Enum.FillDirection.Horizontal
+	coinsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	coinsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	coinsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	coinsLayout.Padding = UDim.new(0, 6)
+	coinsLayout.Parent = coinsBadge
+
+	-- Símbolo: ImageLabel quando COIN_ICON_ASSET preenchido, fallback "$"
+	-- enquanto vazio (não deixa buraco visual antes do upload do asset).
+	if COIN_ICON_ASSET ~= "" then
+		local img = Instance.new("ImageLabel")
+		img.Name = "Icon"
+		img.LayoutOrder = 1
+		img.Size = UDim2.fromOffset(24, 24)
+		img.BackgroundTransparency = 1
+		img.BorderSizePixel = 0
+		img.ScaleType = Enum.ScaleType.Fit
+		img.Image = COIN_ICON_ASSET
+		img.Parent = coinsBadge
+	else
+		local sym = Instance.new("TextLabel")
+		sym.Name = "IconFallback"
+		sym.LayoutOrder = 1
+		sym.Size = UDim2.fromOffset(24, 24)
+		sym.BackgroundTransparency = 1
+		sym.Text = "$"
+		sym.TextColor3 = Color3.fromRGB(255, 200, 30)
+		sym.TextSize = 22
+		sym.Font = Enum.Font.GothamBlack
+		sym.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		sym.TextStrokeTransparency = 0.35
+		sym.Parent = coinsBadge
+	end
+
+	local coinsAmount = Instance.new("TextLabel")
+	coinsAmount.Name = "Amount"
+	coinsAmount.LayoutOrder = 2
+	coinsAmount.Size = UDim2.fromOffset(0, 24)
+	coinsAmount.AutomaticSize = Enum.AutomaticSize.X
+	coinsAmount.BackgroundTransparency = 1
+	coinsAmount.Text = "0"
+	coinsAmount.TextColor3 = Color3.fromRGB(255, 220, 120)
+	coinsAmount.TextSize = 18
+	coinsAmount.Font = Enum.Font.GothamBold
+	coinsAmount.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	coinsAmount.TextStrokeTransparency = 0.35
+	coinsAmount.Parent = coinsBadge
+
+	local coinsSuffix = Instance.new("TextLabel")
+	coinsSuffix.Name = "Suffix"
+	coinsSuffix.LayoutOrder = 3
+	coinsSuffix.Size = UDim2.fromOffset(0, 24)
+	coinsSuffix.AutomaticSize = Enum.AutomaticSize.X
+	coinsSuffix.BackgroundTransparency = 1
+	coinsSuffix.Text = "COINS"
+	coinsSuffix.TextColor3 = Color3.fromRGB(200, 200, 220)
+	coinsSuffix.TextSize = 14
+	coinsSuffix.Font = Enum.Font.GothamBold
+	coinsSuffix.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	coinsSuffix.TextStrokeTransparency = 0.4
+	coinsSuffix.Parent = coinsBadge
+
+	self._coinsBadge = coinsBadge
+	self._coinsLabel = coinsAmount
 
 	-- Damage é mostrado pelo DamageLabelController (world-space BillboardGui acima do char).
 	-- Sem painel bottom-center no novo HUD — evita redundância + overlap com stock panel.
@@ -345,9 +435,8 @@ function HudController:_enterLobbyLayout()
 		self._stockPanel:Hide()
 	end
 	if self._lobbyProgressPanel then
+		-- Sem shell: BackgroundTransparency permanece 1 (não faz fade-in do BG).
 		self._lobbyProgressPanel.Visible = true
-		self._lobbyProgressPanel.BackgroundTransparency = 1
-		fadePanel(self._lobbyProgressPanel, 0.25, TRANSITION_FADE_SECONDS)
 	end
 	if self._rankBadge then
 		self._rankBadge.Visible = true
@@ -357,9 +446,10 @@ function HudController:_enterLobbyLayout()
 end
 
 function HudController:_enterArenaLayout()
-	-- Arena: apenas stock panel (avatares). Dano mostrado pelo DamageLabelController.
+	-- Arena: stock panel (avatares) + level/xp persistente. RankBadge esconde.
+	-- Dano mostrado pelo DamageLabelController.
 	if self._lobbyProgressPanel then
-		self._lobbyProgressPanel.Visible = false
+		self._lobbyProgressPanel.Visible = true
 	end
 	if self._rankBadge then
 		self._rankBadge.Visible = false
@@ -381,7 +471,8 @@ function HudController:_transitionTo(newState: string)
 		if previousState == "InArena" then
 			-- Stock panel é escondido no _enterLobbyLayout. Nada pra fadear aqui.
 		else
-			fadePanel(self._lobbyProgressPanel, 1, TRANSITION_FADE_SECONDS)
+			-- Level/XP persiste em ambos os estados (sem shell, nada pra fadear).
+			-- Apenas o rankBadge esconde indo pra arena.
 			fadePanel(self._rankBadge, 1, TRANSITION_FADE_SECONDS)
 		end
 		task.delay(TRANSITION_FADE_SECONDS, function()
@@ -428,6 +519,10 @@ function HudController:_applyStateSnapshot(snapshot: { [string]: any })
 		self._rankLabel.Text = name
 		self._rankLabel.TextColor3 = color
 		self._rankAccent.BackgroundColor3 = color
+	end
+
+	if self._coinsLabel and typeof(snapshot.currency) == "number" then
+		self._coinsLabel.Text = tostring(snapshot.currency)
 	end
 end
 

@@ -11,12 +11,15 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Types = require(sharedFolder:WaitForChild("Types"))
 local Classes = require(sharedFolder:WaitForChild("Classes"))
+
+local ResponsiveLayout = require(script.Parent:WaitForChild("ResponsiveLayout"))
 
 type ClassCatalogEntry = Types.ClassCatalogEntry
 type ShopCatalogPayload = Types.ShopCatalogPayload
@@ -44,6 +47,15 @@ local CARD_WIDTH = 240
 local CARD_HEIGHT = 400
 local CARD_HERO_HEIGHT = 200
 
+-- Responsive layout: composição "fixed geometry" em resolução de design,
+-- escalada via UIScale pra caber no safe viewport (sem reflow estrutural).
+-- Padrão da skill roblox-ui-creator — ver Controllers/ResponsiveLayout.lua.
+-- Width 880 cabe 3 cards de 240 + paddings sem precisar scroll horizontal.
+local MODAL_DESIGN_WIDTH = 880
+local MODAL_DESIGN_HEIGHT = 620
+local MODAL_POP_START_WIDTH = 810
+local MODAL_POP_START_HEIGHT = 570
+
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
@@ -63,6 +75,9 @@ ShopController._busy = false
 ShopController._cards = {} :: { [string]: any }
 ShopController._promptConnections = {} :: { [Instance]: { RBXScriptConnection } }
 ShopController._lastCatalog = nil :: ShopCatalogPayload?
+ShopController._panelScale = nil :: UIScale?
+ShopController._viewportConn = nil :: RBXScriptConnection?
+ShopController._cameraChangedConn = nil :: RBXScriptConnection?
 
 -- ===== UI helpers =====
 
@@ -287,12 +302,14 @@ local function buildGui(): ScreenGui
 	dim.BorderSizePixel = 0
 	dim.Parent = gui
 
-	-- Modal panel
+	-- Modal panel — geometria fixa em design coords, escalada via UIScale.
+	-- Position é reatribuída em _applyResponsiveLayout() pra centralizar no
+	-- safe viewport (ignora gui inset, mas respeita-o pra centro).
 	local modal = Instance.new("Frame")
 	modal.Name = "Modal"
 	modal.AnchorPoint = Vector2.new(0.5, 0.5)
-	modal.Position = UDim2.new(0.5, 0, 0.5, 0)
-	modal.Size = UDim2.new(0.92, 0, 0, 620)
+	modal.Position = UDim2.fromScale(0.5, 0.5)
+	modal.Size = UDim2.new(0, MODAL_DESIGN_WIDTH, 0, MODAL_DESIGN_HEIGHT)
 	modal.BackgroundColor3 = COLOR_BG_SURFACE
 	modal.BorderSizePixel = 0
 	-- Active = true faz o modal sinkar input. Sem isso, cliques na área do modal
@@ -303,16 +320,9 @@ local function buildGui(): ScreenGui
 	corner(modal, 20)
 	stroke(modal, COLOR_OUTLINE, 3)
 
-	local aspect = Instance.new("UISizeConstraint")
-	aspect.MaxSize = Vector2.new(900, 680)
-	aspect.MinSize = Vector2.new(360, 560)
-	aspect.Parent = modal
-
-	-- UIScale pro pop-in animation (não tween Size pra não brigar com Scale-based width)
-	local modalScale = Instance.new("UIScale")
-	modalScale.Name = "PopScale"
-	modalScale.Scale = 1
-	modalScale.Parent = modal
+	-- UIScale do fit-to-viewport. Pop-in agora usa tween de Size em design coords
+	-- (UIScale aplica o fit por fora — não há briga). Mesmo padrão do StatsPanel.
+	ShopController._panelScale = ResponsiveLayout.EnsureUiScale(modal, "ResponsiveScale")
 
 	padding(modal, 20)
 
@@ -682,17 +692,20 @@ function ShopController:Open()
 	self._gui.Enabled = true
 	self:_setStatus("", COLOR_TEXT_MUTED)
 
-	-- Pop-in animation no modal (via UIScale pra preservar a largura escalável)
+	-- Reaplica responsive layout antes de abrir: se o viewport mudou enquanto
+	-- o painel estava fechado (rotate de device), scale/position estaria stale.
+	self:_applyResponsiveLayout()
+
+	-- Pop-in: tween de Size em design coords. UIScale (responsivo) aplica o
+	-- fit-to-viewport por fora, então o tween termina sempre no design size
+	-- correto independente do device.
 	if self._modalFrame then
-		local popScale = self._modalFrame:FindFirstChild("PopScale") :: UIScale?
-		if popScale then
-			popScale.Scale = 0.92
-			TweenService:Create(
-				popScale,
-				TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-				{ Scale = 1 }
-			):Play()
-		end
+		self._modalFrame.Size = UDim2.new(0, MODAL_POP_START_WIDTH, 0, MODAL_POP_START_HEIGHT)
+		TweenService:Create(
+			self._modalFrame,
+			TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{ Size = UDim2.new(0, MODAL_DESIGN_WIDTH, 0, MODAL_DESIGN_HEIGHT) }
+		):Play()
 	end
 
 	local catalog = self:_fetchCatalog()
@@ -700,6 +713,32 @@ function ShopController:Open()
 		self:_render(catalog)
 	else
 		self:_setStatus("Failed to load shop.", COLOR_ERROR)
+	end
+end
+
+function ShopController:_applyResponsiveLayout()
+	local metrics = ResponsiveLayout.GetViewportMetrics()
+
+	-- GetViewportFitScale garante que o modal cabe em 94% da largura safe e
+	-- no default dinâmico de altura (0.86 phoneLandscape, 0.9 shortHeight,
+	-- 0.94 normal) — previne corte de bottom em phones landscape onde inset
+	-- da status bar come mais altura. min 0.35, max 1 (não upscala em telão).
+	if self._panelScale then
+		local panelScale = ResponsiveLayout.GetViewportFitScale(
+			metrics,
+			MODAL_DESIGN_WIDTH,
+			MODAL_DESIGN_HEIGHT,
+			0.94,
+			nil,
+			0.35,
+			1
+		)
+		self._panelScale.Scale = panelScale
+	end
+
+	if self._modalFrame then
+		-- Centraliza no safe viewport (respeita inset top/bottom).
+		self._modalFrame.Position = ResponsiveLayout.GetSafeCenterPosition(metrics)
 	end
 end
 
@@ -761,6 +800,31 @@ function ShopController:Start()
 	self._balanceLabel = headerRow and headerRow:FindFirstChild("Balance") :: TextLabel?
 	self._statusLabel = self._modalFrame and self._modalFrame:FindFirstChild("Status") :: TextLabel?
 	self._cardsContainer = self._modalFrame and self._modalFrame:FindFirstChild("Cards") :: Frame?
+
+	-- Aplica scale inicial + reaplica em resize (rotate de device, join mid-game
+	-- em outro aspect ratio, etc.). Camera pode ser recriada — reanexa via
+	-- CurrentCameraChanged pra não perder a conexão.
+	self:_applyResponsiveLayout()
+
+	local function attachCameraWatcher()
+		if self._viewportConn then
+			self._viewportConn:Disconnect()
+			self._viewportConn = nil
+		end
+		local camera = Workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		self._viewportConn = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			self:_applyResponsiveLayout()
+		end)
+	end
+
+	attachCameraWatcher()
+	self._cameraChangedConn = Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		attachCameraWatcher()
+		self:_applyResponsiveLayout()
+	end)
 
 	-- Refetch catalog quando o prompt do coin pack fecha com sucesso.
 	-- ProcessReceipt no server pode terminar antes ou depois do prompt fechar

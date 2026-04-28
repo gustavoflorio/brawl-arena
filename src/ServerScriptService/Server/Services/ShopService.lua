@@ -131,6 +131,14 @@ function ShopService:BuyClass(player: Player, classId: string): ShopBuyResult
 	local newBalance = playerData:AddCurrency(player, -classDef.Price)
 	playerData:UnlockClass(player, classId)
 
+	-- Push novo saldo via PublishState (HUD lê snapshot.currency). Mesmo
+	-- padrão do CoinSpawnService — sem isto a coin badge fica stale até o
+	-- próximo state push (kill/death/enter arena).
+	local arenaService = services.ArenaService
+	if arenaService and arenaService.PublishState then
+		arenaService:PublishState(player)
+	end
+
 	if analytics and analytics.Log then
 		analytics:Log(Constants.Analytics.Events.ClassPurchased, {
 			userId = player.UserId,

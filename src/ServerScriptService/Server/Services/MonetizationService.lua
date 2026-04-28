@@ -122,6 +122,13 @@ function MonetizationService:_processReceipt(receiptInfo: any): Enum.ProductPurc
 			Constants.Shop.CoinPack.Amount,
 			newBalance
 		))
+		-- Push novo saldo via PublishState (HUD lê snapshot.currency). Mesmo
+		-- padrão do CoinSpawnService — sem isto a coin badge fica stale até o
+		-- próximo state push (kill/death/enter arena).
+		local arenaService = services.ArenaService
+		if arenaService and arenaService.PublishState then
+			arenaService:PublishState(player)
+		end
 		if analytics then
 			analytics:Log(Constants.Analytics.Events.CoinPackPurchased, {
 				userId = player.UserId,

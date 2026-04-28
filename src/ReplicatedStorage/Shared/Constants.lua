@@ -24,6 +24,7 @@ local Constants = {
 		SeriesEvent = "SeriesEvent",
 		XPGain = "XPGain",
 		FPGain = "FPGain",
+		CoinGain = "CoinGain",
 	},
 	Combat = {
 		-- Frame data por move. Cada move tem 4 fases temporais:
