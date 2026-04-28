@@ -131,6 +131,13 @@ local Constants = {
 			},
 		},
 		InputBufferWindow = 0.15,
+		-- IASA window: fração do recovery em que o próximo move pode cancelar
+		-- o atual (e.g. 0.1 = últimos 10% do recovery). Proporcional escala
+		-- com o tamanho do move — Boxer (recovery 0.18s) ganha ~0.018s de
+		-- cancel; Ballerina (recovery 0.85s) ganha ~0.085s. Active phase
+		-- continua sempre committed (proteção do hit), porque a janela é
+		-- aplicada só sobre Recovery.
+		CancelPct = 0.05,
 		DodgeRollCooldown = 3.0,
 		DodgeRollDurationSeconds = 0.5,
 		DodgeRollVelocityMultiplier = 1.5,

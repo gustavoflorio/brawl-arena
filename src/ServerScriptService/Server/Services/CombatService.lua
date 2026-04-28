@@ -45,6 +45,7 @@ type ActiveSwing = {
 	activeEndsAt: number,
 	recoveryEndsAt: number,
 	comboWindowEndsAt: number,
+	cancelOpensAt: number, -- IASA: cancel-into-next permitido a partir desse tempo
 	rewindTime: number, -- timestamp (workspace:GetServerTimeNow()) usado pra lag comp
 	hitTargets: { [Player]: boolean },
 	phase: string, -- "startup" | "active" | "recovery"
@@ -131,21 +132,24 @@ local function resolveFacing(root: BasePart): Vector3
 	return Vector3.new(1, 0, 0)
 end
 
-function CombatService:_getMovesFor(player: Player): { [string]: any }
-	-- Resolve moveset baseado na classe equipada do player. Fallback pra
-	-- classe default se o profile ainda não carregou ou se a classe equipada
-	-- some do registry (defesa em profundidade — não deveria acontecer com
-	-- a migration certa).
+function CombatService:_getClassFor(player: Player): any
+	-- Resolve classe equipada do player. Fallback pra classe default se o
+	-- profile ainda não carregou ou se a classe equipada some do registry
+	-- (defesa em profundidade — não deveria acontecer com a migration certa).
 	local services = self._services :: Services
 	local playerData = services.PlayerDataService
 	if playerData and playerData.GetEquippedClass then
 		local classId = playerData:GetEquippedClass(player)
 		local classDef = Classes.GetClass(classId)
 		if classDef then
-			return classDef.Moves
+			return classDef
 		end
 	end
-	return Classes.GetDefault().Moves
+	return Classes.GetDefault()
+end
+
+function CombatService:_getMovesFor(player: Player): { [string]: any }
+	return self:_getClassFor(player).Moves
 end
 
 function CombatService:_checkRateLimit(player: Player): boolean
@@ -409,42 +413,50 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	arenaService:PublishState(target)
 end
 
-function CombatService:_resolveRequestedMove(player: Player, requestedKey: string): string?
-	-- Combo sem cancel: durante swing, NENHUM novo move é aceito. Cliente
-	-- buferiza. Jab2/Jab3 só encadeiam DEPOIS do swing anterior completar
-	-- (lastCombo set pelo _tickSwings). Isso preserva integridade visual
-	-- da animação inteira — jab1 sempre roda até o fim antes do jab2.
+function CombatService:_resolveRequestedMove(player: Player, isHeavy: boolean): string?
+	-- Encadeamento dirigido por Move.Next: o cliente só sinaliza "punch" ou
+	-- "heavy"; o servidor walka a chain a partir do lastCombo pra decidir
+	-- qual move é o próximo. IASA: durante o cancel window (últimos N
+	-- segundos do recovery, definido por Constants.Combat.CancelWindow), o
+	-- próximo move é aceito e substitui o swing atual. Startup+Active
+	-- continuam committed pra preservar integridade do hit.
 	local active = self._activeSwings[player]
-	local last = self._lastCombo[player]
 	local now = os.clock()
-	local moves = self:_getMovesFor(player)
-
-	if not moves[requestedKey] then
+	if active and now < active.cancelOpensAt then
 		return nil
 	end
 
-	-- Qualquer swing em andamento bloqueia (sem IASA).
-	if active then
-		return nil
-	end
+	local class = self:_getClassFor(player)
+	local moves = class.Moves
 
-	if requestedKey == "Heavy" then
-		return "Heavy"
-	elseif requestedKey == "Jab1" then
-		return "Jab1"
-	elseif requestedKey == "Jab2" then
-		if last ~= nil and last.moveKey == "Jab1" and now < last.windowEndsAt then
-			return "Jab2"
+	if isHeavy then
+		local key = class.HeavyKey
+		if not key or not moves[key] then
+			return nil
 		end
-		return nil
-	elseif requestedKey == "Jab3" then
-		if last ~= nil and last.moveKey == "Jab2" and now < last.windowEndsAt then
-			return "Jab3"
-		end
-		return nil
+		return key
 	end
 
-	return nil
+	local last = self._lastCombo[player]
+	if last == nil or now >= last.windowEndsAt then
+		-- Combo zerado: começa pelo starter da classe.
+		local key = class.ComboStarter
+		if not key or not moves[key] then
+			return nil
+		end
+		return key
+	end
+
+	-- Continua chain: lastMove.Next aponta o próximo. nil = chain acabou.
+	local lastMove = moves[last.moveKey]
+	if not lastMove then
+		return nil
+	end
+	local nextKey = lastMove.Next
+	if not nextKey or not moves[nextKey] then
+		return nil
+	end
+	return nextKey
 end
 
 function CombatService:_startSwing(player: Player, moveKey: string, clientTime: number?)
@@ -462,15 +474,23 @@ function CombatService:_startSwing(player: Player, moveKey: string, clientTime: 
 		rewindTime = math.clamp(clientTime, serverNow - maxRewind, serverNow)
 	end
 
+	local activeEndsAt = now + move.Startup + move.Active
+	local recoveryEndsAt = activeEndsAt + move.Recovery
+	-- IASA: cancel abre nos últimos CancelPct do recovery (proporcional ao
+	-- tamanho do move). Active phase é sempre committed pra preservar o hit
+	-- — a janela é aplicada só dentro do Recovery.
+	local cancelOpensAt = activeEndsAt + move.Recovery * (1 - Constants.Combat.CancelPct)
+
 	self._activeSwings[player] = {
 		moveKey = moveKey,
 		move = move,
 		swingId = HttpService:GenerateGUID(false),
 		startedAt = now,
 		activeStartsAt = now + move.Startup,
-		activeEndsAt = now + move.Startup + move.Active,
-		recoveryEndsAt = now + move.Startup + move.Active + move.Recovery,
-		comboWindowEndsAt = now + move.Startup + move.Active + move.Recovery + move.ComboWindow,
+		activeEndsAt = activeEndsAt,
+		recoveryEndsAt = recoveryEndsAt,
+		comboWindowEndsAt = recoveryEndsAt + move.ComboWindow,
+		cancelOpensAt = cancelOpensAt,
 		rewindTime = rewindTime,
 		hitTargets = {},
 		phase = "startup",
@@ -517,15 +537,19 @@ function CombatService:_tickSwings()
 			end
 			if now >= swing.activeEndsAt then
 				swing.phase = "recovery"
+				-- Active → Recovery: arma lastCombo já aqui (não no fim do
+				-- recovery). Sem isso, cancel via IASA encontra lastCombo=nil
+				-- e zera o chain — Jet2 viraria Jet1 quando cancelando Jet1.
+				self._lastCombo[player] = {
+					moveKey = swing.moveKey,
+					windowEndsAt = swing.comboWindowEndsAt,
+				}
 			end
 		end
 
-		-- Recovery → Done: arma lastCombo pra validar próximo jab do chain.
+		-- Recovery → Done: limpa active swing. lastCombo já foi setado na
+		-- transição active→recovery, então persiste após o swing acabar.
 		if swing.phase == "recovery" and now >= swing.recoveryEndsAt then
-			self._lastCombo[player] = {
-				moveKey = swing.moveKey,
-				windowEndsAt = swing.comboWindowEndsAt,
-			}
 			self._activeSwings[player] = nil
 		end
 	end
@@ -538,7 +562,7 @@ function CombatService:_tickSwings()
 	end
 end
 
-function CombatService:_handlePunchRequest(player: Player, requestedMoveKey: string, clientTime: number?)
+function CombatService:_handlePunchRequest(player: Player, isHeavy: boolean, clientTime: number?)
 	local arenaService = (self._services :: Services).ArenaService
 	if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
 		return
@@ -546,7 +570,7 @@ function CombatService:_handlePunchRequest(player: Player, requestedMoveKey: str
 	if not self:_checkRateLimit(player) then
 		return
 	end
-	local resolved = self:_resolveRequestedMove(player, requestedMoveKey)
+	local resolved = self:_resolveRequestedMove(player, isHeavy)
 	if not resolved then
 		return
 	end
@@ -629,24 +653,20 @@ function CombatService:Start()
 	end
 	requestRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 		if action == Constants.Actions.Punch then
-			local comboIndex = 1
+			-- Cliente só sinaliza "M1 apertado" — chain é resolvida server-side
+			-- a partir do _lastCombo. Sem comboIndex no payload: a fonte de
+			-- verdade do progresso do combo é o servidor.
 			local clientTime: number? = nil
-			if typeof(payload) == "table" then
-				if typeof(payload.comboIndex) == "number" then
-					comboIndex = math.clamp(math.floor(payload.comboIndex), 1, 3)
-				end
-				if typeof(payload.clientTime) == "number" then
-					clientTime = payload.clientTime
-				end
+			if typeof(payload) == "table" and typeof(payload.clientTime) == "number" then
+				clientTime = payload.clientTime
 			end
-			local moveKey = "Jab" .. tostring(comboIndex)
-			self:_handlePunchRequest(player, moveKey, clientTime)
+			self:_handlePunchRequest(player, false, clientTime)
 		elseif action == Constants.Actions.HeavyPunch then
 			local clientTime: number? = nil
 			if typeof(payload) == "table" and typeof(payload.clientTime) == "number" then
 				clientTime = payload.clientTime
 			end
-			self:_handlePunchRequest(player, "Heavy", clientTime)
+			self:_handlePunchRequest(player, true, clientTime)
 		elseif action == Constants.Actions.DodgeRoll then
 			self:_handleDodgeRoll(player)
 		elseif action == Constants.Actions.DI then

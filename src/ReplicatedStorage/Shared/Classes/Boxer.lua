@@ -11,10 +11,12 @@ local Boxer = {
 	Id = "Boxer",
 	DisplayName = "Boxer",
 	Description = "Constant pressure. Fast jabs, no mystery.",
-	IconAssetId = "",
+	IconAssetId = "77777904772382",
 	Price = 0,
 	IsDefault = true,
 	Moves = Constants.Combat.Moves,
+	ComboStarter = "Jab1",
+	HeavyKey = "Heavy",
 }
 
 return Boxer

@@ -11,10 +11,12 @@ local Taekwon = {
 	Id = "Taekwon",
 	DisplayName = "Taekwon",
 	Description = "High burst. Long kicks, surgical punishment.",
-	IconAssetId = "",
+	IconAssetId = "121198361774472",
 	Price = 500,
 	IsDefault = false,
 	Moves = Constants.Combat.Moves,
+	ComboStarter = "Jab1",
+	HeavyKey = "Heavy",
 }
 
 return Taekwon

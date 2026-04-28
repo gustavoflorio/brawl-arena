@@ -30,11 +30,26 @@ local VFX_TRAIL_MIN_DURATION = 0.05
 
 local vfxFolder: Folder? = ReplicatedStorage:FindFirstChild("Punch VFX") :: Folder?
 
-type TrackKind = "Jab1" | "Jab2" | "Jab3" | "Heavy" | "DodgeRoll" | "DoubleJump" | "Running" | "HitReaction1" | "HitReaction2"
+-- TrackKind é só string: chaves de combat são class-defined (cada classe nomeia
+-- seus moves como quiser — Jab1/Jet1/etc). Tracks não-combat (Running/DodgeRoll
+-- /DoubleJump/HitReaction1-N) são globais.
+type TrackKind = string
 
--- Ordem importante: tracks de combat (Jab1-Jab3, Heavy) listadas primeiro
--- facilita o iteration em IsPunching/cancel.
-local COMBAT_TRACKS: { TrackKind } = { "Jab1", "Jab2", "Jab3", "Heavy" }
+-- COMBAT_TRACKS = união dos move keys de TODAS as classes registradas. Computado
+-- uma vez no module load. Iterado em cancel/IsPunching/hitstop pra encontrar
+-- qual track de combat está tocando, sem assumir nomenclatura fixa.
+local COMBAT_TRACKS: { TrackKind } = {}
+do
+	local seen: { [string]: boolean } = {}
+	for _, classDef in ipairs(Classes.GetCatalog()) do
+		for kind in pairs(classDef.Moves) do
+			if not seen[kind] then
+				seen[kind] = true
+				table.insert(COMBAT_TRACKS, kind)
+			end
+		end
+	end
+end
 
 local HIT_REACTION_IDS: { string } = Constants.Assets.HitReactionAnimationIds
 
@@ -81,9 +96,8 @@ local function getAnimator(humanoid: Humanoid): Animator
 end
 
 function CombatFxController:_getAnimation(name: string, assetId: string): Animation
-	-- Cache por assetId, NAO por name. Caso contrario "Jab1" do Boxer e "Jab1"
-	-- da Ballerina (mesma TrackKind, AnimationIds diferentes) colidem na cache
-	-- e o player so toca a primeira que carregou.
+	-- Cache por assetId pra evitar criar Animation duplicado pro mesmo asset
+	-- (várias classes podem reusar o mesmo AnimationId).
 	local cached = self._animCache[assetId]
 	if cached then
 		return cached
@@ -176,9 +190,12 @@ function CombatFxController:IsPunching(): boolean
 end
 
 function CombatFxController:PlayLocalPunch(moveKey: string?)
-	-- moveKey: "Jab1" | "Jab2" | "Jab3" | "Heavy". Default "Jab1" por compat
-	-- com callers sem contexto de combo.
-	local kind: TrackKind = (moveKey :: any) or "Jab1"
+	-- moveKey é uma chave de move da classe equipada (Jab1/Jet1/Spin/etc).
+	-- InputController sempre passa um valor; só retornamos se vier nil.
+	if not moveKey then
+		return
+	end
+	local kind: TrackKind = moveKey
 	local move = self:_resolveCombatMove(kind)
 	if not move then
 		return
@@ -214,7 +231,10 @@ function CombatFxController:PlayLocalPunch(moveKey: string?)
 			self._tracks[kind] = nil
 		end
 	end)
-	track:Play(0.05)
+	-- AnimSpeed permite acelerar/desacelerar a anim por move (default 1).
+	-- Quem define AnimSpeed deve escalar Startup/Active/Recovery na mesma
+	-- proporção pra manter gameplay em sync com a anim visual.
+	track:Play(0.05, 1, (move :: any).AnimSpeed or 1)
 end
 
 function CombatFxController:PlayDodgeRoll()
@@ -730,8 +750,7 @@ function CombatFxController:Start()
 		pushUnique(spec.name, spec.id)
 	end
 	for _, classDef in ipairs(Classes.GetCatalog()) do
-		for _, kind in ipairs(COMBAT_TRACKS) do
-			local move = classDef.Moves[kind]
+		for kind, move in pairs(classDef.Moves) do
 			if move and typeof(move.AnimationId) == "string" then
 				pushUnique(kind, move.AnimationId)
 			end

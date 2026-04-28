@@ -9,10 +9,11 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
+local Classes = require(sharedFolder:WaitForChild("Classes"))
 
 local localPlayer = Players.LocalPlayer
 
-type BufferedPunch = { isHeavy: boolean, at: number }
+type BufferedPunch = { isHeavy: boolean, at: number, flushableSince: number? }
 
 local InputController = {}
 InputController._controllers = nil :: { [string]: any }?
@@ -21,13 +22,18 @@ InputController._bufferedPunch = nil :: BufferedPunch?
 InputController._tickConn = nil :: RBXScriptConnection?
 
 -- Combo state: espelha o lado servidor (ver CombatService._activeSwings).
--- Cliente decide proativamente qual jab está firando pra poder trocar a anim
+-- Cliente decide proativamente qual move está firando pra poder trocar a anim
 -- instantaneamente (antes do server ack). Server valida e pode dropar.
--- Nota: não há cancel durante swing — qualquer input durante animação em
--- curso é bufferizado e disparado quando swing acaba.
+-- Encadeamento dirigido por Move.Next da classe equipada — chaves arbitrárias
+-- (Jab1/Jab2... ou Jet1/Jet2/Arabesque...) só importam pra cadeia, não pro
+-- protocolo. IASA: durante o cancel window (últimos N seg do swing), input
+-- direto cancela o recovery e dispara o próximo move. Inputs durante o
+-- committed phase (startup+active) são bufferizados e flushados ao abrir
+-- o cancel window — anim do current corta no momento, anim do next entra.
 InputController._activeMoveKey = nil :: string?
 InputController._swingEndsAt = 0
-InputController._comboIndex = 0
+InputController._cancelOpensAt = 0
+InputController._lastMoveKey = nil :: string?
 InputController._comboWindowEndsAt = 0
 
 function InputController:Init(controllers: { [string]: any })
@@ -67,24 +73,50 @@ function InputController:_isBusy(): boolean
 	return false
 end
 
-function InputController:_isInSwing(now: number): boolean
-	return self._activeMoveKey ~= nil and now < self._swingEndsAt
+function InputController:_isCommitted(now: number): boolean
+	-- Committed = startup + active + parte inicial do recovery (até cancelOpensAt).
+	-- Durante esse intervalo, input não dispara móve novo: vira buffer.
+	return self._activeMoveKey ~= nil and now < self._cancelOpensAt
+end
+
+function InputController:_getEquippedClass()
+	local controllers = self._controllers
+	local shop = controllers and controllers.ShopController
+	local classId
+	if shop and type(shop.GetEquippedClassId) == "function" then
+		classId = shop:GetEquippedClassId()
+	else
+		classId = Classes.GetDefaultId()
+	end
+	return Classes.GetClass(classId) or Classes.GetDefault()
 end
 
 function InputController:_resolveNextMove(isHeavy: boolean, now: number): string?
 	-- Decide qual move iniciar. Retorna moveKey ou nil se precisa bufferizar.
-	-- Regra: swing em curso = SEMPRE buffer (animação inteira deve rodar).
-	if self:_isInSwing(now) then
+	-- Regra: committed phase = buffer (anim do startup/active deve rodar
+	-- inteira). Cancel window aberto = dispara imediatamente, cancelando
+	-- o recovery do current.
+	if self:_isCommitted(now) then
 		return nil
 	end
+	local class = self:_getEquippedClass()
+	local moves = class.Moves
 	if isHeavy then
-		return "Heavy"
+		local key = class.HeavyKey
+		if key and moves[key] then
+			return key
+		end
+		return nil
 	end
-	-- Player livre: se combo window ainda válido, continua. Senão reset pra Jab1.
-	if self._comboIndex > 0 and self._comboIndex < 3 and now < self._comboWindowEndsAt then
-		return "Jab" .. tostring(self._comboIndex + 1)
+	-- Player livre: se combo window ainda válido, walka chain via Next. Senão
+	-- reseta pro starter da classe (Jab1 / Jet1 / etc.).
+	if self._lastMoveKey and now < self._comboWindowEndsAt then
+		local lastMove = moves[self._lastMoveKey]
+		if lastMove and lastMove.Next and moves[lastMove.Next] then
+			return lastMove.Next
+		end
 	end
-	return "Jab1"
+	return class.ComboStarter
 end
 
 function InputController:FirePunch(isHeavy: boolean)
@@ -108,7 +140,7 @@ function InputController:_firePunch(isHeavy: boolean)
 		return
 	end
 
-	local move = Constants.Combat.Moves[moveKey]
+	local move = self:_getEquippedClass().Moves[moveKey]
 	if not move then
 		return
 	end
@@ -117,16 +149,13 @@ function InputController:_firePunch(isHeavy: boolean)
 	if remote then
 		-- clientTime: workspace:GetServerTimeNow() é sincronizado entre cliente
 		-- e servidor. Server usa esse valor pra rewind a posição dos alvos na
-		-- hora de resolver a hitbox (B1, lag compensation).
+		-- hora de resolver a hitbox (B1, lag compensation). Não enviamos qual
+		-- move foi disparado — server resolve pelo lastCombo dele.
 		local clientTime = Workspace:GetServerTimeNow()
 		if isHeavy then
 			remote:FireServer(Constants.Actions.HeavyPunch, { clientTime = clientTime })
 		else
-			local comboIndex = tonumber(string.sub(moveKey, 4))
-			remote:FireServer(Constants.Actions.Punch, {
-				comboIndex = comboIndex,
-				clientTime = clientTime,
-			})
+			remote:FireServer(Constants.Actions.Punch, { clientTime = clientTime })
 		end
 	end
 
@@ -146,15 +175,23 @@ function InputController:_firePunch(isHeavy: boolean)
 	end
 
 	-- Atualiza estado local pra próximo firePunch/tick.
+	local activeEndsAt = now + move.Startup + move.Active
+	local swingEndsAt = activeEndsAt + move.Recovery
 	self._activeMoveKey = moveKey
-	self._swingEndsAt = now + move.Startup + move.Active + move.Recovery
-	self._comboWindowEndsAt = self._swingEndsAt + move.ComboWindow
+	self._swingEndsAt = swingEndsAt
+	-- IASA: cancel abre nos últimos CancelPct do recovery (proporcional).
+	-- Espelha o lado servidor.
+	self._cancelOpensAt = activeEndsAt + move.Recovery * (1 - Constants.Combat.CancelPct)
+	self._comboWindowEndsAt = swingEndsAt + move.ComboWindow
 	if isHeavy then
-		-- Heavy reseta combo chain: próximo M1 começa do Jab1.
-		self._comboIndex = 0
+		-- Heavy reseta combo chain: próximo M1 começa do starter da classe.
+		self._lastMoveKey = nil
 	else
-		self._comboIndex = tonumber(string.sub(moveKey, 4)) or 1
+		self._lastMoveKey = moveKey
 	end
+	-- Disparo direto consome qualquer buffer pendente (player já viu o input
+	-- ser atendido — buffer antigo viraria input fantasma).
+	self._bufferedPunch = nil
 end
 
 function InputController:_tryFlushBuffer(now: number)
@@ -162,14 +199,21 @@ function InputController:_tryFlushBuffer(now: number)
 	if not buffered then
 		return
 	end
-	-- Buffer expande pra toda a duração do swing atual + InputBufferWindow.
-	-- Sem ciclo de cancel, o player que aperta M1 no meio do jab1 quer que
-	-- o jab2 dispare ao fim — então o buffer precisa sobreviver à animação
-	-- inteira. Expiração só vale se NÃO estamos em swing (timeout natural).
-	local inSwing = self:_isInSwing(now)
-	if not inSwing and now - buffered.at > Constants.Combat.InputBufferWindow then
-		self._bufferedPunch = nil
-		return
+	-- Buffer sobrevive durante o committed phase (startup+active e parte do
+	-- recovery). Quando cancelOpensAt é atingido, vira elegível pra flush e
+	-- InputBufferWindow começa a contar — flushableSince marca esse momento.
+	-- Resultado: input antigo cancela current no abrir do cancel window;
+	-- input que ficou pendurado por mais que InputBufferWindow após isso é
+	-- descartado pra evitar ghost input.
+	local committed = self:_isCommitted(now)
+	if not committed then
+		if buffered.flushableSince == nil then
+			buffered.flushableSince = now
+		end
+		if now - buffered.flushableSince > Constants.Combat.InputBufferWindow then
+			self._bufferedPunch = nil
+			return
+		end
 	end
 	if self:_isBusy() then
 		return
@@ -190,16 +234,17 @@ function InputController:_tickState(now: number)
 	if self._activeMoveKey and now >= self._swingEndsAt then
 		self._activeMoveKey = nil
 	end
-	-- Combo window expirou: reseta combo index.
-	if self._comboIndex > 0 and self._activeMoveKey == nil and now >= self._comboWindowEndsAt then
-		self._comboIndex = 0
+	-- Combo window expirou: reseta lastMoveKey (próximo M1 começa do starter).
+	if self._lastMoveKey and self._activeMoveKey == nil and now >= self._comboWindowEndsAt then
+		self._lastMoveKey = nil
 	end
 end
 
 function InputController:_resetComboState()
 	self._activeMoveKey = nil
 	self._swingEndsAt = 0
-	self._comboIndex = 0
+	self._cancelOpensAt = 0
+	self._lastMoveKey = nil
 	self._comboWindowEndsAt = 0
 	self._bufferedPunch = nil
 end

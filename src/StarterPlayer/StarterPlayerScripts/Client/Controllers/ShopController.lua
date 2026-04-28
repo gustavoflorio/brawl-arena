@@ -124,15 +124,20 @@ local function createCard(entry: ClassCatalogEntry): Frame
 	hero.Parent = card
 	corner(hero, 14)
 
+	-- HeroImage: mesma altura estendida do hero (HERO + 14) com UICorner 14, pra
+	-- top corners curvarem junto com card e bottom corners ficarem cobertos pelo
+	-- content. UICorner no hero não recorta ImageLabel filho — precisa do próprio.
 	local heroImage = Instance.new("ImageLabel")
 	heroImage.Name = "HeroImage"
-	heroImage.Size = UDim2.new(1, 0, 0, CARD_HERO_HEIGHT)
+	heroImage.Size = UDim2.new(1, 0, 0, CARD_HERO_HEIGHT + 14)
 	heroImage.Position = UDim2.new(0, 0, 0, 0)
 	heroImage.BackgroundTransparency = 1
+	heroImage.BorderSizePixel = 0
 	heroImage.ScaleType = Enum.ScaleType.Crop
 	heroImage.Image = (entry.iconAssetId ~= "" and ("rbxassetid://" .. entry.iconAssetId)) or ""
 	heroImage.Visible = entry.iconAssetId ~= ""
 	heroImage.Parent = hero
+	corner(heroImage, 14)
 
 	local placeholder = Instance.new("TextLabel")
 	placeholder.Name = "Placeholder"

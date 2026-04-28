@@ -14,7 +14,9 @@ export type ClassDefinition = {
 	IconAssetId: string,
 	Price: number,
 	IsDefault: boolean,
-	Moves: { [string]: any }, -- shape espelha Constants.Combat.Moves[moveKey]
+	Moves: { [string]: any }, -- chaves arbitrárias por classe; cada move define Next pra encadear
+	ComboStarter: string, -- chave do primeiro move do combo (M1 inicial)
+	HeavyKey: string?, -- chave do move pesado (M2); nil = classe sem heavy
 }
 
 local Classes = {}

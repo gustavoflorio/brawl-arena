@@ -275,6 +275,16 @@ function MovementController:StartPunchSwing(lungeSpeed: number, lungeDuration: n
 	local now = os.clock()
 	local until_ = now + totalDuration
 
+	-- Resolve facing ANTES de marcar swing ativo. Se player mudou de direção
+	-- no mesmo frame do M1, MoveDirection.X já tem o valor novo mas o
+	-- lockConnection ainda não rodou pra atualizar LookVector — precisa snap
+	-- manual aqui pra hitbox (server lê LookVector) bater com lunge.
+	local facing = resolveFacingVector(root, humanoid)
+	if math.abs(root.CFrame.LookVector.X - facing.X) > 0.01 then
+		local pos = root.Position
+		root.CFrame = CFrame.lookAt(pos, pos + Vector3.new(facing.X, 0, 0))
+	end
+
 	if self._punchSwingActive then
 		-- Cliente não emite swings sobrepostos (buffer garante isso), mas por
 		-- segurança: extende o deadline e reinicia o lunge drive.
@@ -285,10 +295,9 @@ function MovementController:StartPunchSwing(lungeSpeed: number, lungeDuration: n
 		self._punchSwingActive = true
 		humanoid.WalkSpeed = 0
 		-- AutoRotate é false globalmente durante arena (lockConnection).
-		-- Facing já está snappped em ±X, não precisa ser resalvo aqui.
+		-- Facing acabou de ser resolvido + snappped logo acima.
 	end
 
-	local facing = resolveFacingVector(root, humanoid)
 	self:_startPunchLunge(facing, lungeSpeed, lungeDuration)
 
 	task.delay(totalDuration, function()
