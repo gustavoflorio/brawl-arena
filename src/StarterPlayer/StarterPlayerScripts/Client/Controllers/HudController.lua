@@ -219,7 +219,7 @@ local function buildNewHud(self)
 	local coinsBadge = Instance.new("Frame")
 	coinsBadge.Name = "CoinsBadge"
 	coinsBadge.AnchorPoint = Vector2.new(1, 0)
-	coinsBadge.Position = UDim2.new(1, -16, 0, 74) -- 6 (LevelXp top) + 60 (height) + 8 (gap)
+	coinsBadge.Position = UDim2.new(1, -16, 0, 62) -- xpText bottom em y=60 + gap 2px
 	coinsBadge.Size = UDim2.new(0, 0, 0, 28)
 	coinsBadge.AutomaticSize = Enum.AutomaticSize.X
 	coinsBadge.BackgroundTransparency = 1

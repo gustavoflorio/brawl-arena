@@ -189,6 +189,13 @@ function DevController:Init(controllers: { [string]: any })
 end
 
 function DevController:Start()
+	-- UI desabilitada: dev panel de +500 coins não monta pra ninguém.
+	-- Pra reativar, remova este return. Endpoint do server (DevService) e
+	-- whitelist (Constants.Dev.UserIds) continuam intactos — só a UI sumiu.
+	if true then
+		return
+	end
+
 	if not isDev(localPlayer.UserId) then
 		return
 	end
