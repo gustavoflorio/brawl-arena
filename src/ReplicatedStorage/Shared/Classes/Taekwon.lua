@@ -61,6 +61,11 @@ local Taekwon = {
 	},
 	ComboStarter = "Sweep",
 	HeavyKey = "DragonKick",
+	-- Dark violet (luminance ~0.30). Burst/kinetic energy read; sem overlap com damage gradient.
+	AccentColor = Color3.fromRGB(95, 50, 180),
+	-- Bandagens (wraps) nas mãos e pés — striker/muay thai vibe.
+	-- TODO: substituir por IDs reais do catalog Roblox (free wrap accessories).
+	AccessoryAssetIds = {} :: { number },
 }
 
 return Taekwon

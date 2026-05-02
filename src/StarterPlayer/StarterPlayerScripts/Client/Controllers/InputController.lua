@@ -168,6 +168,14 @@ function InputController:_firePunch(isHeavy: boolean)
 	if fxController and type(fxController.PlayLocalPunch) == "function" then
 		fxController:PlayLocalPunch(moveKey)
 	end
+	if isHeavy then
+		-- Class outline snap (LOCAL only). Cosmético: outline fica brevemente
+		-- mais visível pra reforçar identidade da classe no momento do heavy.
+		local outlineController = controllers and controllers.ClassOutlineController
+		if outlineController and type(outlineController.NotifyLocalSignatureMove) == "function" then
+			outlineController:NotifyLocalSignatureMove()
+		end
+	end
 	local movementController = controllers and controllers.MovementController
 	if movementController and type(movementController.StartPunchSwing) == "function" then
 		-- Lunge drive dura Startup+Active (char avança durante o windup e o

@@ -22,6 +22,7 @@ local controllerOrder = {
 	"DonateKioskController",
 	"DodgeCooldownController",
 	"ShopController",
+	"ClassOutlineController",
 	"DevController",
 }
 

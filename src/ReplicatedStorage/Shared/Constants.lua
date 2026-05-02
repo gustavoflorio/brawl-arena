@@ -218,6 +218,7 @@ local Constants = {
 		Level = "BrawlLevel",
 		RankName = "BrawlRankName",
 		RankTier = "BrawlRankTier",
+		ClassId = "BrawlClassId",
 	},
 	XP = {
 		Base = 20,

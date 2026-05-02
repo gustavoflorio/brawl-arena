@@ -55,6 +55,24 @@ Roblox usa `Color3.fromRGB(r, g, b)`. Abaixo os valores RGB e um apelido pra usa
 
 Hit effects, kill feed markers, nameplates e accents devem usar essas cores conforme o player envolvido.
 
+### Class Colors (3, expansíveis)
+
+Cores de identidade por classe — pintam apenas a **silhueta do corpo** (`Highlight.OutlineColor` em arena). Palette luminance-differentiated pra sobreviver deuteranopia/protanopia (~8% pop).
+
+| Token | RGB | Luminance | Classe |
+| --- | --- | --- | --- |
+| `class.boxer` | `220, 180, 90` | ~0.65 (mid, warm) | Boxer — burnished gold, "default/grounded/heavy" |
+| `class.taekwon` | `95, 50, 180` | ~0.30 (dark, cool) | Taekwon — dark violet, "burst/kinetic" |
+| `class.ballerina` | `140, 240, 220` | ~0.82 (bright, cool) | Ballerina — bright aqua-mint, "mobility/flow" |
+
+Trio é distinguível por hue (gold ~50° / violet ~265° / aqua ~170°) **e** por luminance (mid / dark / bright) — sobrevive até achromatopsia total.
+
+**Surface decoupling rule (crítica):**
+> Player color (P1-P4) e Class color são axes ortogonais.
+> - **Player color** → HUD overlays, hit FX tinting, nameplate, kill feed marker.
+> - **Class color** → silhueta do corpo apenas (`Highlight.OutlineColor`).
+> Nunca deixar as duas axes pintarem a mesma surface.
+
 ### Damage Escalation
 
 Gradiente contínuo no `DamageLabelController` conforme % aumenta:
@@ -207,3 +225,4 @@ Fontes atuais (Gotham / GothamBold / GothamBlack) ficam. Adicionar `Sarpanch` / 
 | --- | --- | --- |
 | 2026-04-21 | Design system inicial criado via `/design-consultation` | Formalizar a paleta dark + accents semânticos já presente no código, acrescentar player colors pra 4-player readability, adicionar display fonts chunky pra damage/KO. |
 | 2026-04-21 | **Zero motion de tela/câmera em hits** | Decisão explícita do usuário. Motion agressiva de viewport atrapalha competitive play. Motion permanece permitida apenas contida em widgets individuais. |
+| 2026-05-02 | **Class Colors + surface decoupling** (gold / violet / aqua) | Identificação visual de classe via Highlight outline em arena (`ClassOutlineController`). Palette luminance-differentiated pra colorblind safety. Player color e class color nunca compartilham surface. |

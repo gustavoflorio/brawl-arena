@@ -17,6 +17,14 @@ export type ClassDefinition = {
 	Moves: { [string]: any }, -- chaves arbitrárias por classe; cada move define Next pra encadear
 	ComboStarter: string, -- chave do primeiro move do combo (M1 inicial)
 	HeavyKey: string?, -- chave do move pesado (M2); nil = classe sem heavy
+	-- Class identity (visual): cor sutil do Highlight outline em arena (ClassOutlineController).
+	-- Palette luminance-differentiated (sobrevive deuteranopia/protanopia ~8% pop).
+	-- Não conflita com player slot colors (P1-P4) nem damage gradient.
+	AccentColor: Color3,
+	-- Acessórios diegéticos (clothing) por classe — InsertService:LoadAsset usado server-side
+	-- (ClassAccessoryService). Lista vazia = classe sem accessory; IDs inválidos degradam
+	-- gracioso (pcall + warn). Roblox catalog placeholders por enquanto, swap por arte custom depois.
+	AccessoryAssetIds: { number },
 }
 
 local Classes = {}

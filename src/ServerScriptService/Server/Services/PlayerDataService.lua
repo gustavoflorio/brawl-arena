@@ -271,15 +271,16 @@ function PlayerDataService:SetRankName(player: Player, rankName: string)
 end
 
 function PlayerDataService:SyncOverheadAttributes(player: Player)
-	-- Propaga Level e Rank como attributes no character. Attributes replicam
-	-- automaticamente pra todos os clients, então o HeadBadgeController vê
-	-- o dado de qualquer player sem round-trip via remote.
+	-- Propaga Level, Rank e Class equipada como attributes no character. Attributes
+	-- replicam automaticamente pra todos os clients, então HeadBadgeController e
+	-- ClassOutlineController veem o dado de qualquer player sem round-trip via remote.
 	local character = player.Character
 	local data = self:GetProfile(player)
 	if not character or not data then
 		return
 	end
 	character:SetAttribute(Constants.CharacterAttributes.Level, data.Level)
+	character:SetAttribute(Constants.CharacterAttributes.ClassId, data.EquippedClass)
 
 	local services = self._services
 	local rankService = services and services.RankService

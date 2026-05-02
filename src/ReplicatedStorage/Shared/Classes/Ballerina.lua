@@ -73,6 +73,11 @@ local Ballerina = {
 	},
 	ComboStarter = "Jet1",
 	HeavyKey = "Spin",
+	-- Bright aqua-mint (luminance ~0.82). Mobility/flow read; ≠ player.p2 cyan; ≠ semantic.success.
+	AccentColor = Color3.fromRGB(140, 240, 220),
+	-- Tutu (saia de bailarina) na cintura.
+	-- TODO: substituir por IDs reais do catalog Roblox (free tutu accessory).
+	AccessoryAssetIds = {} :: { number },
 }
 
 return Ballerina

@@ -204,8 +204,11 @@ function ArenaService:TeleportToArena(player: Player)
 
 	local character = player.Character
 	if character then
-		local now = os.clock()
-		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, now + Constants.Arena.InvincibilityDuration)
+		-- InvincibleUntil é lido por clients (ClassOutlineController, e potencialmente
+		-- outros consumidores). Usar Workspace:GetServerTimeNow() — sincronizado
+		-- server↔client. os.clock() seria server-local e clients não conseguiriam
+		-- comparar (mesmo bug do HitStopUntil corrigido em 91573d0).
+		character:SetAttribute(Constants.CharacterAttributes.InvincibleUntil, Workspace:GetServerTimeNow() + Constants.Arena.InvincibilityDuration)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitterId, 0)
 		character:SetAttribute(Constants.CharacterAttributes.LastHitTime, 0)
 		character:SetAttribute(Constants.CharacterAttributes.DamagePercent, 0)

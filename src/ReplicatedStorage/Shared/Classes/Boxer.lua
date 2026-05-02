@@ -17,6 +17,11 @@ local Boxer = {
 	Moves = Constants.Combat.Moves,
 	ComboStarter = "Jab1",
 	HeavyKey = "Heavy",
+	-- Burnished gold (mid luminance ~0.65). Reads as "default/grounded/heavy".
+	AccentColor = Color3.fromRGB(220, 180, 90),
+	-- Boxing gloves nas mãos. Asset IDs Roblox catalog placeholder — swap por arte custom.
+	-- TODO: substituir por IDs reais do catalog Roblox (free boxing gloves accessory).
+	AccessoryAssetIds = {} :: { number },
 }
 
 return Boxer

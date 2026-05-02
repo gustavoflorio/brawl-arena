@@ -181,6 +181,15 @@ function ShopService:EquipClass(player: Player, classId: string): ShopEquipResul
 		return { success = false, reason = REASONS.UnknownClass }
 	end
 
+	-- Propaga a classe equipada como Character attribute (BrawlClassId) e reaplica
+	-- accessories diegéticos. Sem isso, ClassOutlineController e clients remotos
+	-- só veriam a classe nova no próximo respawn.
+	playerData:SyncOverheadAttributes(player)
+	local accessoryService = services.ClassAccessoryService
+	if accessoryService and accessoryService.Reapply then
+		accessoryService:Reapply(player)
+	end
+
 	if analytics and analytics.Log then
 		analytics:Log(Constants.Analytics.Events.ClassEquipped, {
 			userId = player.UserId,
