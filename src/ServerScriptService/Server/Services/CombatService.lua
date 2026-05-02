@@ -78,6 +78,12 @@ type PendingDI = {
 	windowStartAt: number,
 }
 
+type ActiveTrap = {
+	trapId: string,
+	victim: Player,
+	endsAt: number,
+}
+
 local CombatService = {}
 CombatService._services = nil :: Services?
 CombatService._activeSwings = {} :: { [Player]: ActiveSwing }
@@ -86,6 +92,11 @@ CombatService._nextDodgeAllowedAt = {} :: { [Player]: number }
 CombatService._requestWindow = {} :: { [Player]: { number } }
 CombatService._snapshots = {} :: { [Player]: { Snapshot } }
 CombatService._pendingDI = {} :: { [Player]: PendingDI }
+-- Active traps (Palmas etc): tracked por puncher pra que tick callbacks pendentes
+-- possam ser cancelados quando o puncher é interrompido (e.g., levou um hit no
+-- meio do canalize). Cada tick captura trapId no closure e checa contra o atual
+-- — mismatch = trap foi cancelada, return.
+CombatService._activeTraps = {} :: { [Player]: ActiveTrap }
 CombatService._heartbeatConn = nil :: RBXScriptConnection?
 
 local function getCharacterRoot(player: Player): BasePart?
@@ -306,8 +317,12 @@ local function applyHitStop(character: Model, duration: number)
 	-- HitStopUntil é lido pelo InputController (bloqueia input) e
 	-- pelo CombatFxController (pausa anim + walkspeed). Se hit múltiplo
 	-- chegar durante hitstop ativo, preserva o maior deadline.
+	-- Usa Workspace:GetServerTimeNow() (sincronizado server↔client) em vez de
+	-- os.clock() — este último tem referência por-VM, e o cliente computaria
+	-- `remaining = until - os.clock()` contra clock dessincronizado, gerando
+	-- valores enormes (dezenas de segundos) e congelando o char até rejoin.
 	local current = character:GetAttribute(Constants.CharacterAttributes.HitStopUntil)
-	local target = os.clock() + duration
+	local target = Workspace:GetServerTimeNow() + duration
 	if typeof(current) == "number" and current > target then
 		target = current
 	end
@@ -356,6 +371,10 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 	-- distribuído entre N ticks ao longo do trap. Cada tick bumpa HitSeq pra
 	-- gerar SFX/VFX de palma landing rítmica. HitStop é setado UMA VEZ com
 	-- duração total = TrapDuration; ticks só agregam damage.
+	-- Cancelable: trapId é registrado em _activeTraps[puncher] e cada tick
+	-- valida contra o atual antes de fazer dano. Se o puncher levar hit no
+	-- meio do canalize, _cancelTrap zera _activeTraps[puncher] → ticks
+	-- pendentes encontram mismatch e abortam, victim é liberado cedo.
 	local arenaService = (self._services :: Services).ArenaService
 	local targetCharacter = target.Character
 	local puncherCharacter = puncher.Character
@@ -368,6 +387,13 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 	local damagePerTick = move.Damage / ticks
 	local interval = trapDuration / ticks
 
+	local trapId = HttpService:GenerateGUID(false)
+	self._activeTraps[puncher] = {
+		trapId = trapId,
+		victim = target,
+		endsAt = Workspace:GetServerTimeNow() + trapDuration,
+	}
+
 	targetCharacter:SetAttribute(Constants.CharacterAttributes.HitKind, move.HitKind)
 	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
 	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
@@ -375,6 +401,11 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 
 	for i = 1, ticks do
 		task.delay((i - 1) * interval, function()
+			-- Trap cancelada (puncher tomou hit) → trapId não bate mais.
+			local trap = self._activeTraps[puncher]
+			if not trap or trap.trapId ~= trapId then
+				return
+			end
 			if target.Character ~= targetCharacter or not targetCharacter.Parent then
 				return
 			end
@@ -388,11 +419,58 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 		end)
 	end
 
+	-- Cleanup do registry após o trap terminar naturalmente. Margem de 0.05s
+	-- pra garantir que o último tick rodou antes do clear. Idempotente: se o
+	-- puncher já iniciou outra trap, trapId mudou e este clear é skipado.
+	task.delay(trapDuration + 0.05, function()
+		local trap = self._activeTraps[puncher]
+		if trap and trap.trapId == trapId then
+			self._activeTraps[puncher] = nil
+		end
+	end)
+
 	-- Puncher leva hitstop curto (confirmação visual de hit), não a duração
 	-- inteira do trap — senão o puncher também ficaria parado 4s.
 	if puncherCharacter then
 		applyHitStop(puncherCharacter, math.min(0.15, move.HitstopBase * move.HitstopAttackerRatio))
 	end
+end
+
+function CombatService:_cancelTrap(puncher: Player)
+	-- Cancela trap ativo do puncher (callbacks pendentes vão bater mismatch
+	-- de trapId e abortar) e libera o victim do hitstop cedo. Sem o release,
+	-- victim ficaria preso pelo TrapDuration inteiro (ex: 3.5s nas Palmas)
+	-- mesmo após o puncher ser interrompido — UX ruim.
+	local trap = self._activeTraps[puncher]
+	if not trap then
+		return
+	end
+	self._activeTraps[puncher] = nil
+	local victim = trap.victim
+	if not victim then
+		return
+	end
+	local victimChar = victim.Character
+	if not victimChar then
+		return
+	end
+	local now = Workspace:GetServerTimeNow()
+	local current = victimChar:GetAttribute(Constants.CharacterAttributes.HitStopUntil)
+	if typeof(current) == "number" and current > now then
+		-- Set HitStopUntil pro presente; HitStopSeq bump dispara o listener
+		-- do client com remaining<=0 → MovementController:EndHitStopLock.
+		victimChar:SetAttribute(Constants.CharacterAttributes.HitStopUntil, now)
+		bumpSeqAttribute(victimChar, Constants.CharacterAttributes.HitStopSeq)
+	end
+end
+
+function CombatService:_cancelTargetSwing(target: Player)
+	-- Target tomou hit: cancela qualquer ataque/trap em andamento. Sem isso,
+	-- shaolin canalizando Palmas mantém o trap ativo após levar knockback,
+	-- e qualquer combo no recovery continua até o final.
+	self._activeSwings[target] = nil
+	self._lastCombo[target] = nil
+	self:_cancelTrap(target)
 end
 
 function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, move: MoveData)
@@ -402,6 +480,11 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	if not punchRoot or not targetRoot then
 		return
 	end
+
+	-- "Tomou hit = para de atacar": cancela swing/trap ativos do target ANTES
+	-- de aplicar damage/knockback. HitSeq replica e o cliente do target faz
+	-- o mirror visual (stop animation, end lunge, clear combo).
+	self:_cancelTargetSwing(target)
 
 	-- Trap moves (Palmas etc) tem fluxo separado: prendem o target pela
 	-- duração inteira em vez de aplicar hit instantâneo + knockback.
@@ -619,6 +702,13 @@ function CombatService:_tickSwings()
 			self._lastCombo[player] = nil
 		end
 	end
+
+	-- GC de traps cuja puncher saiu da arena ou morreu — libera victim.
+	for puncher, _ in pairs(self._activeTraps) do
+		if arenaService:GetState(puncher) ~= Constants.PlayerState.InArena or not isAlive(puncher) then
+			self:_cancelTrap(puncher)
+		end
+	end
 end
 
 function CombatService:_handlePunchRequest(player: Player, isHeavy: boolean, clientTime: number?)
@@ -750,6 +840,7 @@ function CombatService:Start()
 		self._requestWindow[player] = nil
 		self._snapshots[player] = nil
 		self._pendingDI[player] = nil
+		self._activeTraps[player] = nil
 	end)
 end
 

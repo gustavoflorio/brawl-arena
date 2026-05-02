@@ -134,16 +134,65 @@ function MovementController:StartHitStopLock(duration: number)
 	self._hitStopUntil = until_
 	self._hitStopActive = true
 	humanoid.WalkSpeed = 0
-	task.delay(duration, function()
-		if os.clock() >= self._hitStopUntil - 0.01 and self._hitStopActive then
+	-- Self-rescheduling: se hits subsequentes estenderem _hitStopUntil além do
+	-- deadline original, o delay original encontraria remaining>0 e antes
+	-- skipava a restauração — walkspeed ficava 0 indefinidamente. Agora o
+	-- delay reagenda pra o novo deadline em vez de skipar.
+	local function scheduleRestore(wait: number)
+		task.delay(wait, function()
+			if not self._hitStopActive then
+				return
+			end
+			local remaining = self._hitStopUntil - os.clock()
+			if remaining > 0.01 then
+				scheduleRestore(remaining)
+				return
+			end
 			local h = getHumanoid()
 			if h and h.Parent and not self._punchSwingActive then
 				h.WalkSpeed = self._hitStopSavedWalkSpeed
 			end
 			self._hitStopActive = false
 			self._hitStopUntil = 0
+		end)
+	end
+	scheduleRestore(duration)
+end
+
+function MovementController:CancelPunchSwing()
+	-- Player tomou hit: corta o swing local imediatamente. Lunge constraint
+	-- removida e walkspeed restaurada (a menos que estejamos em hitstop —
+	-- nesse caso o hitstop continua locking a walkspeed e a restauração
+	-- final fica com EndHitStopLock / o self-rescheduling delay).
+	if not self._punchSwingActive then
+		return
+	end
+	self._punchSwingActive = false
+	self._punchSwingUntil = 0
+	self:_endPunchLunge()
+	if not self._hitStopActive then
+		local h = getHumanoid()
+		if h and h.Parent then
+			h.WalkSpeed = self._punchSwingSavedWalkSpeed
 		end
-	end)
+	end
+end
+
+function MovementController:EndHitStopLock()
+	-- Server liberou o hitstop cedo (e.g., trap cancelada por interrupção do
+	-- puncher). Encerra o lock localmente em vez de esperar o deadline
+	-- original — o self-rescheduling delay vê _hitStopActive=false e no-op.
+	if not self._hitStopActive then
+		return
+	end
+	self._hitStopActive = false
+	self._hitStopUntil = 0
+	if not self._punchSwingActive then
+		local h = getHumanoid()
+		if h and h.Parent then
+			h.WalkSpeed = self._hitStopSavedWalkSpeed
+		end
+	end
 end
 
 function MovementController:_endPunchLunge()

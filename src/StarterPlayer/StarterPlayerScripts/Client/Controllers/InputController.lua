@@ -53,7 +53,11 @@ local function isHitStopped(): boolean
 	if typeof(until_) ~= "number" then
 		return false
 	end
-	return os.clock() < until_
+	-- HitStopUntil é setado pelo servidor com Workspace:GetServerTimeNow()
+	-- (clock sincronizado). Comparar com os.clock() local geraria mismatch
+	-- enorme — o jogador ficaria "isHitStopped()=true" por dezenas de
+	-- segundos, bloqueando todos os inputs até rejoin.
+	return Workspace:GetServerTimeNow() < until_
 end
 
 function InputController:_isBusy(): boolean
@@ -247,6 +251,13 @@ function InputController:_resetComboState()
 	self._lastMoveKey = nil
 	self._comboWindowEndsAt = 0
 	self._bufferedPunch = nil
+end
+
+function InputController:CancelCombo()
+	-- Player tomou hit: limpa todo o estado de combo. Próximo M1 começa do
+	-- starter da classe (Jab1 / Jet1 / etc.), não do meio da chain. Buffer
+	-- também é descartado pra evitar input fantasma após o hitstop.
+	self:_resetComboState()
 end
 
 function InputController:Start()

@@ -359,6 +359,34 @@ function CombatFxController:_prepareHitReactionTracks(character: Model)
 	end
 end
 
+function CombatFxController:_cancelLocalSwingOnHit()
+	-- "Tomou hit = para de atacar": stop combat tracks (em vez do pause-resume
+	-- do hitstop listener — pause-resume faz sentido pro PUNCHER que está em
+	-- hitlag, não pro target que deveria ter sido interrompido). Termina lunge
+	-- e walkspeed via MovementController, e limpa combo state no Input.
+	for _, kind in ipairs(COMBAT_TRACKS) do
+		local track = self._tracks[kind]
+		if track then
+			if track.IsPlaying then
+				track:Stop(0.05)
+			end
+			self._tracks[kind] = nil
+		end
+	end
+	local controllers = self._controllers
+	if not controllers then
+		return
+	end
+	local mc = controllers.MovementController
+	if mc and type(mc.CancelPunchSwing) == "function" then
+		mc:CancelPunchSwing()
+	end
+	local ic = controllers.InputController
+	if ic and type(ic.CancelCombo) == "function" then
+		ic:CancelCombo()
+	end
+end
+
 function CombatFxController:_playHitReactionOn(character: Model)
 	-- Usa tracks pré-carregados em _prepareHitReactionTracks. A cada hit,
 	-- para as que estão tocando e dispara uma variante aleatória do zero.
@@ -387,10 +415,12 @@ function CombatFxController:_playHitReactionOn(character: Model)
 
 	-- Hitstop freeze: se o char está em hitstop (set pelo server no mesmo
 	-- instante do HitSeq bump), pausa a anim e agenda retomada ao fim do
-	-- hitstop. HITSTOP_UNTIL_ATTR é replicado via attribute.
+	-- hitstop. HITSTOP_UNTIL_ATTR é replicado via attribute em server time
+	-- (Workspace:GetServerTimeNow), portanto comparamos contra a mesma
+	-- referência aqui — os.clock() seria por-VM e geraria remaining enorme.
 	local hitstopUntil = character:GetAttribute(HITSTOP_UNTIL_ATTR)
 	if typeof(hitstopUntil) == "number" then
-		local remaining = hitstopUntil - os.clock()
+		local remaining = hitstopUntil - Workspace:GetServerTimeNow()
 		if remaining > 0 then
 			track:AdjustSpeed(0)
 			task.delay(remaining, function()
@@ -514,8 +544,19 @@ local function bindHitStopListener(character: Model, fxController: any)
 		if typeof(until_) ~= "number" then
 			return
 		end
-		local remaining = until_ - os.clock()
+		-- HITSTOP_UNTIL_ATTR é server time (Workspace:GetServerTimeNow). Usar
+		-- os.clock() aqui dessincroniza do servidor e congela o char por
+		-- segundos a fio (gap server-uptime vs. client-uptime).
+		local remaining = until_ - Workspace:GetServerTimeNow()
 		if remaining <= 0 then
+			-- Server liberou o hitstop cedo (e.g., trap cancelada — puncher
+			-- foi interrompido e o victim deve sair do lockup imediatamente).
+			-- Sem isso, MovementController seguraria walkspeed=0 até o
+			-- deadline original.
+			local mc = fxController._controllers and fxController._controllers.MovementController
+			if mc and type(mc.EndHitStopLock) == "function" then
+				mc:EndHitStopLock()
+			end
 			return
 		end
 
@@ -683,7 +724,10 @@ end
 
 -- Hit reaction animation listener: toca uma anim aleatória do pool quando
 -- char é atingido. Separado do VFX listener pra que a anim possa ser
--- desabilitada sem mexer nos outros efeitos se necessário.
+-- desabilitada sem mexer nos outros efeitos se necessário. Bind também faz
+-- cancel do swing local (semântica "tomou hit = para de atacar") — server
+-- já cancela do lado dele em CombatService:_cancelTargetSwing, este listener
+-- replica o efeito client-side pra que anim/lunge/combo state parem na hora.
 local function bindHitReactionListener(character: Model, fxController: any)
 	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
 	if typeof(lastSeen) ~= "number" then
@@ -696,6 +740,7 @@ local function bindHitReactionListener(character: Model, fxController: any)
 		end
 		lastSeen = seq
 		fxController:_playHitReactionOn(character)
+		fxController:_cancelLocalSwingOnHit()
 	end)
 end
 
