@@ -29,7 +29,9 @@ local function buildContainer(): Frame
 
 	local container = Instance.new("Frame")
 	container.AnchorPoint = Vector2.new(1, 0)
-	container.Position = UDim2.new(1, -16, 0, 16)
+	-- y=100 deixa 10px de gap abaixo da CoinsBadge (HudController bottom em y=90).
+	-- Sem isso, o HUD top-right (DisplayOrder=30) cobre as entries do feed.
+	container.Position = UDim2.new(1, -16, 0, 100)
 	container.Size = UDim2.new(0, 320, 0, (ENTRY_HEIGHT + 4) * MAX_ENTRIES)
 	container.BackgroundTransparency = 1
 	container.Parent = gui
