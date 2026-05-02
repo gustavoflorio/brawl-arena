@@ -28,7 +28,7 @@ local SPAWN_X_MAX = 132
 local SPAWN_Z = 0
 local RAY_FROM_Y = 50 -- acima do top da arena (Y_MAX=33)
 local RAY_DISTANCE = 100 -- cobre até abaixo do chão
-local COIN_GROUND_OFFSET = 2.2 -- metade do diâmetro (4) + folga pequena
+local COIN_GROUND_OFFSET = 3.5 -- metade do diâmetro (4) + 1.5 de margem visível
 local MAX_SPAWN_ATTEMPTS = 8
 
 local ROTATION_SPEED = math.rad(180) -- 180°/sec, "moeda flipando" classico
