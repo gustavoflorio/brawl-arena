@@ -7,6 +7,7 @@
 -- no topo do arquivo). Motion contida em widgets (pulse, fade) — sem afetar tela.
 
 local CollectionService = game:GetService("CollectionService")
+local ContentProvider = game:GetService("ContentProvider")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -792,6 +793,29 @@ function ShopController:Start()
 	-- GetEquippedClassId() — sem esse fetch o lookup cairia sempre no default.
 	task.spawn(function()
 		self:_fetchCatalog()
+	end)
+
+	-- Preload dos ícones das classes pra evitar cold CDN fetch quando o user
+	-- abre o menu pela primeira vez (ImageLabel só baixa quando criado).
+	-- Mesmo padrão do CombatFxController:Start() pras anims.
+	task.spawn(function()
+		local preloadList: { Instance } = {}
+		for _, classDef in ipairs(Classes.GetCatalog()) do
+			if classDef.IconAssetId ~= "" then
+				local img = Instance.new("ImageLabel")
+				img.Image = "rbxassetid://" .. classDef.IconAssetId
+				table.insert(preloadList, img)
+			end
+		end
+		if #preloadList == 0 then
+			return
+		end
+		local ok, err = pcall(function()
+			ContentProvider:PreloadAsync(preloadList)
+		end)
+		if not ok then
+			warn("[ShopController] PreloadAsync falhou:", err)
+		end
 	end)
 
 	self._gui = buildGui()
