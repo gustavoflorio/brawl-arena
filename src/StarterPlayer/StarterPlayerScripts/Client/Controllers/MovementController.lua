@@ -418,10 +418,16 @@ function MovementController:_startDodgeDrive(humanoid: Humanoid, root: BasePart,
 end
 
 function MovementController:_endDodgeDrive(humanoid: Humanoid?)
-	if self._dodgeDriveConnection then
-		self._dodgeDriveConnection:Disconnect()
-		self._dodgeDriveConnection = nil
+	-- Gate via _dodgeDriveConnection: só restaura walkspeed se o dodge estava
+	-- ativo. Sem isso, _disableArenaControls (chamado em toda transição
+	-- arena→lobby) faria restore com _savedWalkSpeed potencialmente nunca
+	-- inicializado (default 16), travando o player em câmera lenta após
+	-- respawn caso ele nunca tenha dodgeado.
+	if not self._dodgeDriveConnection then
+		return
 	end
+	self._dodgeDriveConnection:Disconnect()
+	self._dodgeDriveConnection = nil
 	if humanoid and humanoid.Parent then
 		humanoid.WalkSpeed = self._savedWalkSpeed
 		-- AutoRotate mantém-se false durante arena (gerenciado por lockConnection).
@@ -587,10 +593,15 @@ function MovementController:_disableArenaControls()
 	self._punchSwingUntil = 0
 	self._hitStopActive = false
 	self._hitStopUntil = 0
-	-- Restaura AutoRotate ao sair da arena (no lobby, controle livre).
+	-- Restaura AutoRotate + walkspeed ao default ao sair da arena. Cobre o
+	-- caso de player que saiu mid-hitstop/swing/dodge — sem essa força bruta,
+	-- humanoid.WalkSpeed ficaria travado em 0 (locks ativos) ou em valor
+	-- stale (e.g., _savedWalkSpeed=16 do default), e o respawn herdaria
+	-- a velocidade errada.
 	local h = getHumanoid()
-	if h then
+	if h and h.Parent then
 		h.AutoRotate = true
+		h.WalkSpeed = Constants.PlayerMovement.WalkSpeed
 	end
 	local fx = self:_fxController()
 	if fx and type(fx.StopRunning) == "function" then
