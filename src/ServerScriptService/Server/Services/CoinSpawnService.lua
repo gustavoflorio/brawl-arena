@@ -20,10 +20,12 @@ local COIN_RESPAWN_DELAY = 5
 local COIN_INITIAL_DELAY = 2
 
 -- Faixa de spawn dentro do bounding box da arena (X 60-140, Y 4.5-33, Z 0).
--- Inset de 15 studs nas pontas pra moeda nao spawnar grudada nas borda.
-local SPAWN_X_MIN = 75
-local SPAWN_X_MAX = 125
-local SPAWN_Y = 9
+-- Inset nas pontas pra moeda nao spawnar grudada nas borda. Y randomizado
+-- pra moeda aparecer no ar tambem (estilo Smash/Mario), nao so na base.
+local SPAWN_X_MIN = 68
+local SPAWN_X_MAX = 132
+local SPAWN_Y_MIN = 9
+local SPAWN_Y_MAX = 26
 local SPAWN_Z = 0
 
 local ROTATION_SPEED = math.rad(180) -- 180°/sec, "moeda flipando" classico
@@ -83,7 +85,8 @@ function CoinSpawnService:_spawnCoin()
 	end
 
 	local x = math.random() * (SPAWN_X_MAX - SPAWN_X_MIN) + SPAWN_X_MIN
-	local coin = buildCoin(Vector3.new(x, SPAWN_Y, SPAWN_Z))
+	local y = math.random() * (SPAWN_Y_MAX - SPAWN_Y_MIN) + SPAWN_Y_MIN
+	local coin = buildCoin(Vector3.new(x, y, SPAWN_Z))
 
 	local touchedConn: RBXScriptConnection?
 	touchedConn = coin.Touched:Connect(function(hit)
