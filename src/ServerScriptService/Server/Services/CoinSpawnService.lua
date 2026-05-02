@@ -20,13 +20,16 @@ local COIN_RESPAWN_DELAY = 5
 local COIN_INITIAL_DELAY = 2
 
 -- Faixa de spawn dentro do bounding box da arena (X 60-140, Y 4.5-33, Z 0).
--- Inset nas pontas pra moeda nao spawnar grudada nas borda. Y randomizado
--- pra moeda aparecer no ar tambem (estilo Smash/Mario), nao so na base.
+-- Escolhe X random no range, daí raycast Y- pra achar a superfície mais alta
+-- (chão ou plataforma) e ancora a moeda em cima — variação vem das plataformas
+-- em alturas diferentes, mas moeda sempre fica no solo (não flutua).
 local SPAWN_X_MIN = 68
 local SPAWN_X_MAX = 132
-local SPAWN_Y_MIN = 9
-local SPAWN_Y_MAX = 26
 local SPAWN_Z = 0
+local RAY_FROM_Y = 50 -- acima do top da arena (Y_MAX=33)
+local RAY_DISTANCE = 100 -- cobre até abaixo do chão
+local COIN_GROUND_OFFSET = 2.2 -- metade do diâmetro (4) + folga pequena
+local MAX_SPAWN_ATTEMPTS = 8
 
 local ROTATION_SPEED = math.rad(180) -- 180°/sec, "moeda flipando" classico
 local TEXTURE_ID = "rbxassetid://79708762867617"
@@ -79,14 +82,44 @@ function CoinSpawnService:Init(services: Services)
 	self._services = services
 end
 
+local function findGroundedSpawn(): Vector3?
+	-- Raycast Y- pra achar a superfície mais alta naquele X. Filtra chars de
+	-- jogador (senão pode bater num player na plataforma e spawnar em cima
+	-- dele). Tenta múltiplos Xs porque pode cair em vão entre plataformas.
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character then
+			table.insert(exclude, player.Character)
+		end
+	end
+	params.FilterDescendantsInstances = exclude
+
+	for _ = 1, MAX_SPAWN_ATTEMPTS do
+		local x = math.random() * (SPAWN_X_MAX - SPAWN_X_MIN) + SPAWN_X_MIN
+		local origin = Vector3.new(x, RAY_FROM_Y, SPAWN_Z)
+		local result = Workspace:Raycast(origin, Vector3.new(0, -RAY_DISTANCE, 0), params)
+		if result then
+			return Vector3.new(x, result.Position.Y + COIN_GROUND_OFFSET, SPAWN_Z)
+		end
+	end
+	return nil
+end
+
 function CoinSpawnService:_spawnCoin()
 	if self._currentCoin and self._currentCoin.Parent then
 		return -- ja tem moeda viva
 	end
 
-	local x = math.random() * (SPAWN_X_MAX - SPAWN_X_MIN) + SPAWN_X_MIN
-	local y = math.random() * (SPAWN_Y_MAX - SPAWN_Y_MIN) + SPAWN_Y_MIN
-	local coin = buildCoin(Vector3.new(x, y, SPAWN_Z))
+	local pos = findGroundedSpawn()
+	if not pos then
+		-- Fallback: nenhum raycast bateu (arena vazia? geometria quebrada?).
+		-- Spawna no centro a Y=9 pra garantir que jogadores ainda peguem moeda.
+		warn("[CoinSpawnService] nenhuma superfície encontrada, usando fallback")
+		pos = Vector3.new((SPAWN_X_MIN + SPAWN_X_MAX) / 2, 9, SPAWN_Z)
+	end
+	local coin = buildCoin(pos)
 
 	local touchedConn: RBXScriptConnection?
 	touchedConn = coin.Touched:Connect(function(hit)
