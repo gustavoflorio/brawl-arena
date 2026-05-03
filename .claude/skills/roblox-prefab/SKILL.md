@@ -65,6 +65,10 @@ Before building, declare which tier you're targeting. The user pissed off at v1/
   - `EditableMesh:SetVertexColor` does NOT exist; use `AddColor` + `SetFaceColors` for per-vertex color, OR (simpler) one MeshPart per color region welded together.
   - `MeshPart.MeshId` is `NotAccessible` to plugin context — that's why we generate via `CreateMeshPartAsync`.
   - Multi-color path: build a separate `EditableMesh` per color region, call `CreateMeshPartAsync` for each, set `MeshPart.Color` on each, weld all under one Accessory.
+  - **`EditableMesh` is NOT an Instance** (`IsA("Instance")=false`). Cannot be parented anywhere. Lives only as runtime Lua reference.
+  - **PERSISTENCE CRITICAL**: `Content.fromObject(em)` references runtime EditableMesh by reference. After script exits, `em` is GC'd, MeshContent becomes `Content{SourceType=Object}` with broken data → renders as **pink-checker (edit mode)** or **white blocks (in-game)**. Workaround: **user MUST `Ctrl+S` (Save Place) immediately after build** so Roblox bakes mesh data into the place file. After save+reload the MeshContent should remain valid. If it doesn't persist, fall back to primitive Parts (Tier 1) — procedural Tier 3 currently has unresolved persistence issue.
+  - **NEVER call `:Destroy()` on mesh template MeshParts after cloning them.** Clones share Object-source Content; destroying templates breaks the clones too.
+  - **Build each Accessory's MeshParts independently** (call `CreateMeshPartAsync` fresh per part) instead of clone-from-template. Each MP gets its own runtime baked mesh.
 
 #### Required helper library (copy into your build script)
 
