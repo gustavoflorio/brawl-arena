@@ -41,9 +41,14 @@ pcall(function()
 	PhysicsService:CollisionGroupSetCollidable(GROUP_PLAYERS, GROUP_PLAYERS, true)
 	-- PlayerHitbox: bloca outros hitboxes (player↔player). Não interage com
 	-- body parts (próprios ou de outros) — body lida com terreno separadamente.
+	-- Tampouco interage com Default (terreno) — sem essa regra, o hitbox de
+	-- 6 studs welded à HRP enterra ~1 stud no chão (HipHeight=2 vs hitbox
+	-- bottom em -3 da HRP), e o ground tenta empurrar o assembly pra cima
+	-- continuamente, atrapalhando KB e gerando physics weirdness.
 	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_HITBOX, true)
 	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_PLAYERS, false)
 	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_DODGING, false)
+	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, "Default", false)
 end)
 
 local function ensureRemotes()

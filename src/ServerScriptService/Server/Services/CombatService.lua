@@ -584,6 +584,12 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 		-- durante hitlag; no Roblox simulamos atrasando a velocity.
 		-- DI é lida APENAS no momento da aplicação (depois do hitstop), dando
 		-- ao cliente do target a janela inteira pra mandar updates de input.
+		-- Hitstun: período em que o alvo fica sob controle 100% physics (sem
+		-- humanoid controller fightando a velocity). Sem hitstun, walking
+		-- input do alvo OU a controller decel-to-walkspeed do humanoid
+		-- anulam a KB em ~1 frame após o pouso. Escala com a magnitude da
+		-- KB pra que hits leves não congelem o alvo eternamente.
+		local hitstunDuration = math.clamp(speed / 200, 0.3, 0.75)
 		task.delay(targetHitStop, function()
 			local current = target.Character
 			if current ~= targetCharacter or not current.Parent then
@@ -596,6 +602,7 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 			end
 			firePulse(Constants.CombatPulseTypes.Knockback, current, {
 				velocity = finalKB,
+				hitstunDuration = hitstunDuration,
 			})
 		end)
 	end

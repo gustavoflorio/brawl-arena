@@ -652,6 +652,12 @@ local function handleHitStopReleasePulse(character: Model, _payload: any, fxCont
 	end
 end
 
+-- Hitstun deadline (server time) compartilhado entre KB pulses. Cada pulse
+-- estende, e só o release task que vê deadline já passado libera o
+-- PlatformStand. Sem isso, hits subsequentes durante hitstun teriam release
+-- tasks brigando — release antigo desligaria o controller mid-stun.
+local _hitstunUntil: number? = nil
+
 local function handleKnockbackPulse(character: Model, payload: any, _fxController: any)
 	-- KB só roda no dono do char — só ele tem physics ownership pra aplicar
 	-- velocity que replica corretamente.
@@ -667,7 +673,37 @@ local function handleKnockbackPulse(character: Model, payload: any, _fxControlle
 		return
 	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
+	-- Hitstun: PlatformStand=true desliga TODOS os controllers do humanoid
+	-- (walking force, jump, state machine) — só physics + velocity persistem.
+	-- Sem isso, o humanoid imediatamente decelera a KB pro walkspeed alvo
+	-- (zero ou input do player), anulando o impulso. ChangeState(Freefall)
+	-- sozinho só funciona em air; ao pousar, controllers voltam e matam KB.X.
+	-- PlatformStand é o switch master pra "ragdoll temporário".
+	local hitstunDuration = typeof(payload) == "table"
+		and typeof(payload.hitstunDuration) == "number"
+		and payload.hitstunDuration or 0
+	if humanoid and hitstunDuration > 0 then
+		humanoid.PlatformStand = true
+		local newDeadline = Workspace:GetServerTimeNow() + hitstunDuration
+		if not _hitstunUntil or newDeadline > _hitstunUntil then
+			_hitstunUntil = newDeadline
+		end
+		task.delay(hitstunDuration, function()
+			-- Hit subsequente extendeu o deadline → outro task release fará.
+			if _hitstunUntil and Workspace:GetServerTimeNow() < _hitstunUntil - 0.01 then
+				return
+			end
+			-- Char pode ter respawnado mid-hitstun; reread humanoid atual.
+			local liveChar = localPlayer.Character
+			local liveHum = liveChar and liveChar:FindFirstChildOfClass("Humanoid")
+			if liveHum and liveHum.Parent then
+				liveHum.PlatformStand = false
+			end
+			_hitstunUntil = nil
+		end)
+	elseif humanoid then
+		-- Fallback (servidor antigo sem hitstunDuration): pelo menos seta
+		-- Freefall pra eventualmente cair com o KB inicial.
 		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
 	end
 	root.AssemblyLinearVelocity = velocity
