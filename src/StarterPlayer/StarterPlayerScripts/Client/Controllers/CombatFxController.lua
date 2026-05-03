@@ -652,11 +652,27 @@ local function handleHitStopReleasePulse(character: Model, _payload: any, fxCont
 	end
 end
 
--- Hitstun deadline (server time) compartilhado entre KB pulses. Cada pulse
--- estende, e só o release task que vê deadline já passado libera o
--- PlatformStand. Sem isso, hits subsequentes durante hitstun teriam release
--- tasks brigando — release antigo desligaria o controller mid-stun.
-local _hitstunUntil: number? = nil
+-- Active KB constraint: lock-X via LinearVelocity (mesmo padrão do lunge).
+-- Trocou PlatformStand porque PlatformStand desliga o HipHeight enforcement
+-- do humanoid → assembly afundava no chão. LinearVelocity em Line mode
+-- trava só X (Y livre pra gravity arc, Z trava em 0 pelo lockConnection),
+-- humanoid mantém o resto do controle (HipHeight, anims, etc). MaxForce=huge
+-- garante que walking input do player não consegue cancelar a velocity X.
+type ActiveKB = { attachment: Attachment, velocity: LinearVelocity }
+local _activeKB: ActiveKB? = nil
+
+local function clearActiveKB()
+	if not _activeKB then
+		return
+	end
+	if _activeKB.velocity and _activeKB.velocity.Parent then
+		_activeKB.velocity:Destroy()
+	end
+	if _activeKB.attachment and _activeKB.attachment.Parent then
+		_activeKB.attachment:Destroy()
+	end
+	_activeKB = nil
+end
 
 local function handleKnockbackPulse(character: Model, payload: any, _fxController: any)
 	-- KB só roda no dono do char — só ele tem physics ownership pra aplicar
@@ -672,41 +688,56 @@ local function handleKnockbackPulse(character: Model, payload: any, _fxControlle
 	if not root or not root:IsA("BasePart") then
 		return
 	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	-- Hitstun: PlatformStand=true desliga TODOS os controllers do humanoid
-	-- (walking force, jump, state machine) — só physics + velocity persistem.
-	-- Sem isso, o humanoid imediatamente decelera a KB pro walkspeed alvo
-	-- (zero ou input do player), anulando o impulso. ChangeState(Freefall)
-	-- sozinho só funciona em air; ao pousar, controllers voltam e matam KB.X.
-	-- PlatformStand é o switch master pra "ragdoll temporário".
 	local hitstunDuration = typeof(payload) == "table"
 		and typeof(payload.hitstunDuration) == "number"
 		and payload.hitstunDuration or 0
-	if humanoid and hitstunDuration > 0 then
-		humanoid.PlatformStand = true
-		local newDeadline = Workspace:GetServerTimeNow() + hitstunDuration
-		if not _hitstunUntil or newDeadline > _hitstunUntil then
-			_hitstunUntil = newDeadline
-		end
-		task.delay(hitstunDuration, function()
-			-- Hit subsequente extendeu o deadline → outro task release fará.
-			if _hitstunUntil and Workspace:GetServerTimeNow() < _hitstunUntil - 0.01 then
-				return
-			end
-			-- Char pode ter respawnado mid-hitstun; reread humanoid atual.
-			local liveChar = localPlayer.Character
-			local liveHum = liveChar and liveChar:FindFirstChildOfClass("Humanoid")
-			if liveHum and liveHum.Parent then
-				liveHum.PlatformStand = false
-			end
-			_hitstunUntil = nil
-		end)
-	elseif humanoid then
-		-- Fallback (servidor antigo sem hitstunDuration): pelo menos seta
-		-- Freefall pra eventualmente cair com o KB inicial.
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		-- Freefall pro initial impulse — sinaliza ao humanoid que char está
+		-- em air, walking-force fica suprimida durante o jump arc.
 		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
 	end
+
+	-- Initial Y impulse (jump arc) + X (overrided pelo constraint logo abaixo,
+	-- mas seta aqui pra garantir velocity inicial caso constraint demore 1 tick).
 	root.AssemblyLinearVelocity = velocity
+
+	-- Limpa qualquer KB constraint anterior (hit anterior ainda em hitstun
+	-- → substituído pelo novo).
+	clearActiveKB()
+
+	if hitstunDuration <= 0 or math.abs(velocity.X) < 0.01 then
+		return
+	end
+
+	-- LinearVelocity em Line mode: trava X durante hitstun, Y/Z livres.
+	-- MaxForce=huge → walking input do humanoid não consegue cancelar
+	-- (mesmo padrão que o lunge usa pra sobrepor o player module).
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "BrawlKBStunAttachment"
+	attachment.Parent = root
+
+	local linearVel = Instance.new("LinearVelocity")
+	linearVel.Name = "BrawlKBStunVelocity"
+	linearVel.Attachment0 = attachment
+	linearVel.RelativeTo = Enum.ActuatorRelativeTo.World
+	linearVel.VelocityConstraintMode = Enum.VelocityConstraintMode.Line
+	linearVel.LineDirection = Vector3.new(if velocity.X >= 0 then 1 else -1, 0, 0)
+	linearVel.LineVelocity = math.abs(velocity.X)
+	linearVel.MaxForce = math.huge
+	linearVel.Parent = root
+
+	local entry: ActiveKB = { attachment = attachment, velocity = linearVel }
+	_activeKB = entry
+
+	task.delay(hitstunDuration, function()
+		-- Só destrói se ainda for o constraint atual (hit subsequente pode ter
+		-- substituído via clearActiveKB no início do próximo handleKnockbackPulse).
+		if _activeKB == entry then
+			clearActiveKB()
+		end
+	end)
 end
 
 local function handleEliminationPulse(character: Model, _payload: any, _fxController: any)
