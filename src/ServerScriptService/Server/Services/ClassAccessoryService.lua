@@ -1,14 +1,18 @@
 --!strict
 
 -- ClassAccessoryService: aplica acessórios diegéticos por classe (luvas pro Boxer,
--- wraps pro Taekwon, tutu pra Ballerina) construídos proceduralmente de Parts
--- primitivos. Server-side: Accessory parented ao Character replica nativamente
--- pra todos os clients — single source of truth.
+-- wraps pro Taekwon, tutu pra Ballerina) no Character. Os prefabs são Accessory
+-- instances criadas em Studio (vivem em ReplicatedStorage.BrawlClassAccessories,
+-- editáveis visualmente no editor) — service só clona e parenta.
 --
--- Arquitetura: shapes/cores definidas em ServerScriptService/Modules/
--- ClassAccessoryDefs.lua. Service só consome a tabela e instancia. Sem
--- InsertService:LoadAsset (issues de copyright + trust policy do Roblox com
--- assets de creators terceiros).
+-- Por que ReplicatedStorage e não ServerStorage:
+--   ServerStorage seria suficiente em runtime (server clona, parenta no Character
+--   replicado). Mas ReplicatedStorage permite que clientes leiam prefabs também
+--   (ex: preview no shop UI futuro). Custo negligível (5 prefabs pequenos).
+--
+-- Por que não InsertService:LoadAsset (catalog):
+--   Roblox bloqueia LoadAsset de items de creators terceiros (trust policy)
+--   + copyright (catalog items não têm licença pra reusar em outros experiences).
 --
 -- Lifecycle:
 --   PlayerAdded → bind CharacterAdded → applyAccessories(char, equipped class)
@@ -16,13 +20,11 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Classes = require(sharedFolder:WaitForChild("Classes"))
 
-local modulesFolder = ServerScriptService:WaitForChild("Server"):WaitForChild("Modules")
-local ClassAccessoryDefs = require(modulesFolder:WaitForChild("ClassAccessoryDefs"))
+local PREFABS_FOLDER_NAME = "BrawlClassAccessories"
 
 type Services = { [string]: any }
 
@@ -34,68 +36,12 @@ local ACCESSORY_TAG = "BrawlClassAccessory"
 local ClassAccessoryService = {}
 ClassAccessoryService._services = nil :: Services?
 ClassAccessoryService._characterConns = {} :: { [Player]: RBXScriptConnection }
+ClassAccessoryService._prefabsFolder = nil :: Folder?
 
-local function buildPart(partDef: any, isHandle: boolean): BasePart
-	local part = Instance.new("Part")
-	part.Shape = partDef.shape
-	part.Size = partDef.size
-	part.Color = partDef.color
-	part.Material = partDef.material
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.Massless = true
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.Name = if isHandle then "Handle" else "AccessoryPart"
-	return part
-end
-
-local function buildAccessory(def: any): Accessory
-	-- Primeira part da def é o "Handle" (pivot welded ao char via Attachment).
-	-- Restantes são parts decorativas welded ao Handle.
-	local accessory = Instance.new("Accessory")
-	accessory.Name = def.name
-	accessory:SetAttribute(ACCESSORY_TAG, true)
-
-	local handlePartDef = def.parts[1]
-	local handle = buildPart(handlePartDef, true)
-	handle.Parent = accessory
-
-	-- Attachment no Handle com nome casado ao attachment do char rig
-	-- (Roblox auto-weld por nome quando Humanoid:AddAccessory é chamado).
-	local attachment = Instance.new("Attachment")
-	attachment.Name = def.attachmentName
-	-- offset do handle = identity (Handle's Attachment.CFrame é o offset que
-	-- o weld vai aplicar relativo ao body part attachment).
-	attachment.CFrame = handlePartDef.offset
-	attachment.Parent = handle
-
-	-- Decorative parts: welded ao Handle. Cada um tem offset relativo ao
-	-- attachment do char, que internamente é Handle.position * weld * partOffset.
-	-- Pra simplificar, transformamos: partOffset relativo ao attachment é
-	-- handle.CFrame * (handlePartDef.offset)^-1 * partDef.offset. Mas como
-	-- o Handle vai ser welded com attachment.CFrame igual ao handlePartDef.offset,
-	-- e a Handle.Position começa origin (0,0,0), o weld interno de outras parts
-	-- pode usar diretamente partDef.offset como CFrame relativo ao attachment.
-	-- Resultado: a outra part welded com WeldConstraint ao Handle, com Part0=
-	-- handle, Part1=otherPart, offset = otherDef.offset relativo a handlePartDef.offset.
-	for i = 2, #def.parts do
-		local partDef = def.parts[i]
-		local extraPart = buildPart(partDef, false)
-		-- CFrame relativo: queremos extraPart no attachment com partDef.offset.
-		-- Handle vai ficar no attachment com handlePartDef.offset.
-		-- Então extraPart relativo ao Handle = (handlePartDef.offset)^-1 * partDef.offset.
-		extraPart.CFrame = handle.CFrame * (handlePartDef.offset:Inverse() * partDef.offset)
-		extraPart.Parent = accessory
-
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = handle
-		weld.Part1 = extraPart
-		weld.Parent = handle
-	end
-
-	return accessory
+local function getPrefabsFolder(): Folder?
+	-- Lazy lookup: se prefabs não tão lá ainda no Init, espera pacientemente.
+	-- Em produção, prefabs vivem no place file (Studio editor save), não no Rojo.
+	return ReplicatedStorage:FindFirstChild(PREFABS_FOLDER_NAME) :: Folder?
 end
 
 local function removeClassAccessories(character: Model)
@@ -108,34 +54,43 @@ local function removeClassAccessories(character: Model)
 	end
 end
 
-local function applyClassAccessories(character: Model, classId: string)
-	local defsList = ClassAccessoryDefs[classId]
-	if not defsList then
-		-- Classe sem accessories definidas — silently skip (válido).
+local function applyClassAccessories(character: Model, classId: string, prefabsFolder: Folder)
+	local classFolder = prefabsFolder:FindFirstChild(classId)
+	if not classFolder then
+		-- Classe sem prefabs cadastrados — silently skip (válido, classes futuras
+		-- podem não ter accessories no asset folder ainda).
 		return
 	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return
 	end
-	for _, def in ipairs(defsList) do
-		local ok, accessoryOrErr = pcall(function()
-			return buildAccessory(def)
-		end)
-		if not ok then
-			warn(string.format("[ClassAccessoryService] buildAccessory failed for %s/%s: %s",
-				classId, def.name, tostring(accessoryOrErr)))
-			continue
+	for _, prefab in ipairs(classFolder:GetChildren()) do
+		if prefab:IsA("Accessory") then
+			local clone = prefab:Clone()
+			clone:SetAttribute(ACCESSORY_TAG, true)
+			-- Prefabs em ReplicatedStorage podem estar Anchored (pra editar parados
+			-- no Studio). No Character, weld só funciona com BasePart unanchored.
+			for _, p in ipairs(clone:GetDescendants()) do
+				if p:IsA("BasePart") then
+					p.Anchored = false
+				end
+			end
+			humanoid:AddAccessory(clone)
 		end
-		local accessory = accessoryOrErr :: Accessory
-		-- Humanoid:AddAccessory faz o weld nas attachment points por nome
-		-- (Handle.Attachment.Name == bodyPart.Attachment.Name → auto-weld).
-		humanoid:AddAccessory(accessory)
 	end
 end
 
 function ClassAccessoryService:Init(services: Services)
 	self._services = services
+	self._prefabsFolder = getPrefabsFolder()
+	if not self._prefabsFolder then
+		warn(string.format(
+			"[ClassAccessoryService] %s folder not found in ReplicatedStorage. " ..
+			"Accessories won't be applied. Verifica que os prefabs foram salvos no place.",
+			PREFABS_FOLDER_NAME
+		))
+	end
 end
 
 function ClassAccessoryService:_resolveEquippedClass(player: Player): string
@@ -148,13 +103,17 @@ function ClassAccessoryService:_resolveEquippedClass(player: Player): string
 end
 
 function ClassAccessoryService:_onCharacterAdded(player: Player, character: Model)
+	local prefabsFolder = self._prefabsFolder
+	if not prefabsFolder then
+		return
+	end
 	-- Espera HumanoidRootPart pra garantir que rig tá pronto pra weld.
 	character:WaitForChild("HumanoidRootPart", 5)
 	local classId = self:_resolveEquippedClass(player)
 	-- Cleanup defensivo: se char foi recém-spawnado mas tem accessory tagueada
 	-- de spawn anterior (não deveria, mas defesa em profundidade), remove.
 	removeClassAccessories(character)
-	applyClassAccessories(character, classId)
+	applyClassAccessories(character, classId, prefabsFolder)
 end
 
 function ClassAccessoryService:_bindPlayer(player: Player)
@@ -177,13 +136,17 @@ end
 function ClassAccessoryService:Reapply(player: Player)
 	-- Chamado pelo ShopService após SetEquippedClass: remove accessories da classe
 	-- antiga e aplica da nova. Sem respawn — player vê troca instantânea no lobby.
+	local prefabsFolder = self._prefabsFolder
+	if not prefabsFolder then
+		return
+	end
 	local character = player.Character
 	if not character then
 		return
 	end
 	local classId = self:_resolveEquippedClass(player)
 	removeClassAccessories(character)
-	applyClassAccessories(character, classId)
+	applyClassAccessories(character, classId, prefabsFolder)
 end
 
 function ClassAccessoryService:Start()
