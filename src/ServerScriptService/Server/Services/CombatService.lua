@@ -97,6 +97,11 @@ CombatService._pendingDI = {} :: { [Player]: PendingDI }
 -- meio do canalize). Cada tick captura trapId no closure e checa contra o atual
 -- — mismatch = trap foi cancelada, return.
 CombatService._activeTraps = {} :: { [Player]: ActiveTrap }
+-- Pendência de cancelamento de swing colhida durante _tickSwings. Set durante
+-- a iteração e processado no fim. Permite mutual hits (A e B socam ao mesmo
+-- frame) — sem isso, _cancelTargetSwing limparia _activeSwings[target] mid-
+-- iteration, e o swing do target era pulado pelo pairs() antes de processar.
+CombatService._pendingSwingCancels = nil :: { [Player]: boolean }?
 CombatService._heartbeatConn = nil :: RBXScriptConnection?
 
 local function getCharacterRoot(player: Player): BasePart?
@@ -473,9 +478,18 @@ function CombatService:_cancelTargetSwing(target: Player)
 	-- Target tomou hit: cancela qualquer ataque/trap em andamento. Sem isso,
 	-- shaolin canalizando Palmas mantém o trap ativo após levar knockback,
 	-- e qualquer combo no recovery continua até o final.
-	self._activeSwings[target] = nil
-	self._lastCombo[target] = nil
+	-- Trap cancel é imediato (sem concern de iteração — _activeTraps é
+	-- iterado em loop separado). Já o swing/lastCombo clear é DEFERIDO
+	-- durante _tickSwings: limpar _activeSwings[target] no meio do for-pairs
+	-- faz o swing do target ser pulado antes de processar mutual hits no
+	-- mesmo frame (A↔B socam juntos → só um conecta).
 	self:_cancelTrap(target)
+	if self._pendingSwingCancels then
+		self._pendingSwingCancels[target] = true
+	else
+		self._activeSwings[target] = nil
+		self._lastCombo[target] = nil
+	end
 end
 
 function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector3, move: MoveData)
@@ -651,6 +665,12 @@ function CombatService:_tickSwings()
 	local now = os.clock()
 	local arenaService = (self._services :: Services).ArenaService
 
+	-- Pending swing cancels: coletados durante a iteração via _cancelTargetSwing
+	-- (chamado de _applyHit). Aplicados DEPOIS do for-pairs pra que mutual hits
+	-- no mesmo frame ambos processem antes de qualquer swing ser removido.
+	local pendingCancels: { [Player]: boolean } = {}
+	self._pendingSwingCancels = pendingCancels
+
 	for player, swing in pairs(self._activeSwings) do
 		-- Player saiu de arena ou morreu: aborta swing.
 		if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
@@ -707,6 +727,16 @@ function CombatService:_tickSwings()
 			self._lastCombo[player] = nil
 		end
 	end
+
+	-- Aplica os cancels de swing colhidos durante o tick. Tem que ser DEPOIS
+	-- do for-pairs principal — limpar _activeSwings durante a iteração faria
+	-- swings de targets de hits ainda-não-processados sumirem antes de poderem
+	-- responder com seus próprios hits (mutual hits viravam single-hit).
+	for player in pairs(pendingCancels) do
+		self._activeSwings[player] = nil
+		self._lastCombo[player] = nil
+	end
+	self._pendingSwingCancels = nil
 
 	-- GC de traps cuja puncher saiu da arena ou morreu — libera victim.
 	for puncher, _ in pairs(self._activeTraps) do
