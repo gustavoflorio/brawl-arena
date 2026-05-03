@@ -280,6 +280,26 @@ Per the project's auto-commit-and-push rule (`feedback_auto_commit_push.md`), af
 - **DO NOT** ship prefabs with `Anchored=false`. Without anchoring, the user can't position them in the Studio editor — they fall on play, fly off on physics, or shift mid-edit. Anchored=true on the prefab; runtime clone unanchors before AddAccessory.
 - **DO NOT** procedurally rebuild prefabs at runtime from a `Defs.lua` table. Tried that earlier this session — the user explicitly rejected it: "para podermos refinar depois" requires Studio editor visibility. Always: build once via MCP, store as Instances in the place file, clone at runtime.
 - **DO NOT** declare a trigger phrase the user wouldn't actually type. "build prefab via Studio MCP" is dev jargon; "cria um acessório" / "novo prefab" / "build accessory" is real user language.
+- **DO NOT** ship a prefab with a Part that has no `WeldConstraint` to Handle. When `Humanoid:AddAccessory` runs, only the Handle gets welded to the body's matching Attachment. Other Parts (siblings of Handle inside the Accessory, OR children of Handle) need their own `WeldConstraint(Part0=Handle, Part1=otherPart)` to follow the Handle to the character. Without it, the Part stays at the prefab's world position (e.g. Y=50 floating in the air where Workspace.Assets lives) — invisible at the player's character location, totally confusing for the user during playtest. **When the user adds a Part to the prefab manually in the Studio editor, proactively check whether it has a weld to Handle. If not, add one.**
+
+## Editor refinement workflow (when user edits a prefab manually)
+
+The user may edit a prefab visually in the Studio Explorer (Insert > Part, drag Position, change Color via Properties panel). Studio's default Insert > Part DOES NOT add welds — it just drops a free Part. After the user adds a Part manually:
+
+1. **Probe the prefab** via `execute_luau` with `target=edit` to see the current tree.
+2. **Check each newly-added Part** has a `WeldConstraint` connecting it to Handle. If missing, add one programmatically:
+   ```lua
+   local weld = Instance.new("WeldConstraint")
+   weld.Part0 = handle
+   weld.Part1 = newPart
+   weld.Parent = handle  -- conventional: weld lives under Part0
+   ```
+3. **Verify the new Part is `Anchored = true`** in the prefab (so it stays put in editor). Runtime service will unanchor on clone.
+4. **Restart playtest** to verify. Edit-mode changes don't propagate to a running Play session — Edit and Play are separate data models. Stop & restart playtest after editing.
+
+If the new Part still doesn't appear in playtest after weld+anchor are correct:
+- Ensure the user **saved the place** (Ctrl+S) at least once. `execute_luau` mutates the in-memory data model; without save, changes don't persist across Studio sessions but DO survive within the same Studio session including Play mode.
+- Verify the Part's CFrame relative to Handle isn't some absurd offset (1000+ studs away). If offset is huge, the Part follows Handle but visually is far off-screen.
 
 ## Output Format
 
