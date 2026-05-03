@@ -197,7 +197,13 @@ local function moveAccessory(accessory, newHandlePos)
 end
 ```
 
-#### Boxing glove recipe (proven v5 — produces actual leather-looking glove with cuff + lacing)
+#### Boxing glove recipe (proven v6 — zero-clipping geometry, leather + cuff + lacing)
+
+**Critical clipping rules** (learned from v5 failure):
+- Fist superellipsoid extends Y=-b to +b (b=0.55 → range -0.55 to +0.55). **Trim/cuff must be at Y < -b**, not anywhere inside that range.
+- Thumb X offset must exceed fist's X half-width (0.65). Thumb at X=0.45 INSIDE fist (since fist extends to X=0.65) → Thumb at X=0.65+ is clear.
+- Lacing Z position must exceed cuff radius. If cuff radius=0.55, lacing Z>=0.59 (sits on cuff surface, not embedded).
+- Trim radius slightly LARGER than cuff (0.62 vs 0.55) so trim visibly protrudes as a ring, not flush with cuff surface.
 
 ```lua
 local LEATHER_RED  = Color3.fromRGB(155, 30, 30)
@@ -206,49 +212,52 @@ local CUFF_TRIM    = Color3.fromRGB(220, 175, 80)
 local LACE_BLACK   = Color3.fromRGB(15, 15, 15)
 
 -- 1) Fist: superellipsoid m=n=2.5 (rounded cube), elongated +Z (depth 0.85),
---    squashed Y (height 0.55), knuckle bulge 0.18. 16 lat × 24 lon = ~432 verts.
-local fistEm = buildSuperellipsoid(16, 24, 0.65, 0.55, 0.85, 2.5, 2.5, 0.18)
+--    squashed Y (height 0.55), knuckle bulge 0.10 (subtle, NOT wart-like).
+local fistEm = buildSuperellipsoid(16, 24, 0.65, 0.55, 0.85, 2.5, 2.5, 0.10)
 local fistMP = AssetService:CreateMeshPartAsync(Content.fromObject(fistEm))
 fistMP.Color = LEATHER_RED
 fistMP.Material = Enum.Material.SmoothPlastic
 fistMP.Reflectance = 0.07
 
--- 2) Thumb: pequeno ellipsoid (10x14, m=n=2 = round)
-local thumbEm = buildSuperellipsoid(10, 14, 0.25, 0.28, 0.32, 2, 2, 0)
+-- 2) Thumb: ellipsoid (10x14, m=n=2 = round). Larger to clear fist edge.
+local thumbEm = buildSuperellipsoid(10, 14, 0.30, 0.30, 0.32, 2, 2, 0)
 local thumbMP = AssetService:CreateMeshPartAsync(Content.fromObject(thumbEm))
 thumbMP.Color = LEATHER_RED
 thumbMP.Material = Enum.Material.SmoothPlastic
 thumbMP.Reflectance = 0.07
 
--- 3) Cuff: cilindro longo (yBottom=-0.55..yTop=0.05, 0.6 stud altura), 24 seg
+-- 3) Cuff: TALL cylinder (height 0.9, era 0.6). Centered at mesh y=0 pra simplicidade
+--    de offset. Radius 0.55 (mais próximo da width do fist 0.65).
 local cuffMP = AssetService:CreateMeshPartAsync(
-  Content.fromObject(buildCappedCylinder(-0.55, 0.05, 0.5, 24)))
+  Content.fromObject(buildCappedCylinder(-0.45, 0.45, 0.55, 24)))
 cuffMP.Color = CUFF_WHITE; cuffMP.Material = Enum.Material.Fabric
 
--- 4) Trim: anel fino dourado (-0.05..0.05, ligeiramente maior raio que cuff)
+-- 4) Trim: anel dourado, radius 0.62 > cuff 0.55 (visualmente protude como ring)
 local trimMP = AssetService:CreateMeshPartAsync(
-  Content.fromObject(buildCappedCylinder(-0.05, 0.05, 0.55, 24)))
+  Content.fromObject(buildCappedCylinder(-0.05, 0.05, 0.62, 24)))
 trimMP.Color = CUFF_TRIM; trimMP.Material = Enum.Material.SmoothPlastic
 trimMP.Reflectance = 0.20
 
--- 5) Lacing: 1 vertical + 3 horizontal cross stripes, fabric preto fino
-local laceVertMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.07, 0.45, 0.05)))
+-- 5) Lacing: vertical + 3 horizontal cross stripes, slightly bigger pra leitura
+local laceVertMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.08, 0.7, 0.06)))
 laceVertMP.Color = LACE_BLACK; laceVertMP.Material = Enum.Material.Fabric
-local laceHorizMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.32, 0.05, 0.05)))
+local laceHorizMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.40, 0.06, 0.06)))
 laceHorizMP.Color = LACE_BLACK; laceHorizMP.Material = Enum.Material.Fabric
 
--- 6) Assemble: Fist é Handle. Thumb pra lateral, Cuff abaixo, Trim entre.
---    Lacing na frente do cuff (Z=+0.5).
+-- 6) Assemble (zero-clipping layout):
+--    Fist range Y=-0.55..+0.55. Trim at Y=-0.60 (just below). Cuff at Y=-1.10
+--    (top kisses trim bottom). Thumb at X=±0.65 (clear of fist edge X=0.65).
+--    Lacing Z=0.59 (outside cuff radius 0.55).
 local function gloveLayout(mirror)
-  local thumbX = mirror and -0.45 or 0.45
+  local thumbX = mirror and -0.65 or 0.65
   return {
-    { mp = thumbMP,     name = "Thumb",    cf = CFrame.new(thumbX, -0.1, 0.25) },
-    { mp = cuffMP,      name = "Cuff",     cf = CFrame.new(0, -0.85, 0) },
-    { mp = trimMP,      name = "Trim",     cf = CFrame.new(0, -0.40, 0) },
-    { mp = laceVertMP,  name = "LaceVert", cf = CFrame.new(0, -0.85, 0.50) },
-    { mp = laceHorizMP, name = "LaceTop",  cf = CFrame.new(0, -0.65, 0.50) },
-    { mp = laceHorizMP, name = "LaceMid",  cf = CFrame.new(0, -0.85, 0.50) },
-    { mp = laceHorizMP, name = "LaceBot",  cf = CFrame.new(0, -1.05, 0.50) },
+    { mp = thumbMP,     name = "Thumb",    cf = CFrame.new(thumbX, -0.05, 0.20) },
+    { mp = trimMP,      name = "Trim",     cf = CFrame.new(0, -0.60, 0) },
+    { mp = cuffMP,      name = "Cuff",     cf = CFrame.new(0, -1.10, 0) },
+    { mp = laceVertMP,  name = "LaceVert", cf = CFrame.new(0, -1.10, 0.59) },
+    { mp = laceHorizMP, name = "LaceTop",  cf = CFrame.new(0, -0.85, 0.59) },
+    { mp = laceHorizMP, name = "LaceMid",  cf = CFrame.new(0, -1.10, 0.59) },
+    { mp = laceHorizMP, name = "LaceBot",  cf = CFrame.new(0, -1.35, 0.59) },
   }
 end
 
