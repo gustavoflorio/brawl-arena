@@ -5,7 +5,6 @@ local controllersFolder = script.Parent:WaitForChild("Controllers")
 local controllerOrder = {
 	"CameraController",
 	"MovementController",
-	"RemoteCharSmoother",
 	"CombatFxController",
 	"InputController",
 	"MobileControlsController",
