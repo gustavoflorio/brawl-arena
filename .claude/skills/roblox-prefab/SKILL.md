@@ -158,16 +158,28 @@ end
 
 ### Phase 3: Visual validation via test dummies
 
-Spawn 1+ R15 dummy in `Workspace`, equip the prefabs, ask user to look in Studio.
+Spawn 1+ R15 dummy in **`Workspace.Assets._TestRigs`** (NEVER at Workspace root — pollutes the user's Explorer view), equip the prefabs, ask user to look in Studio.
 
 ```lua
 local Players = game:GetService("Players")
+
+local function ensureTestRigsFolder(): Folder
+  local assets = Workspace:FindFirstChild("Assets")
+  assert(assets, "Workspace.Assets not found — build prefabs first")
+  local testRigs = assets:FindFirstChild("_TestRigs")
+  if not testRigs then
+    testRigs = Instance.new("Folder")
+    testRigs.Name = "_TestRigs"
+    testRigs.Parent = assets
+  end
+  return testRigs
+end
 
 local function spawnDummy(name, position)
   local desc = Instance.new("HumanoidDescription")
   local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
   model.Name = name  -- prefix e.g. "BrawlAccessoryTestRig_<class>"
-  model.Parent = Workspace
+  model.Parent = ensureTestRigsFolder()  -- NEVER Workspace root
   model:PivotTo(CFrame.new(position))
   for _, p in ipairs(model:GetDescendants()) do
     if p:IsA("BasePart") then p.Anchored = true end
@@ -207,8 +219,12 @@ If positions/sizes/colors are off:
 Once user confirms "ok como v0" or similar, **destroy all test dummies**:
 
 ```lua
-for _, m in ipairs(Workspace:GetChildren()) do
-  if m.Name:find("BrawlAccessoryTestRig") then m:Destroy() end
+local testRigs = Workspace:FindFirstChild("Assets") and
+  Workspace.Assets:FindFirstChild("_TestRigs")
+if testRigs then
+  for _, m in ipairs(testRigs:GetChildren()) do
+    if m.Name:find("BrawlAccessoryTestRig") then m:Destroy() end
+  end
 end
 ```
 
@@ -273,6 +289,7 @@ Per the project's auto-commit-and-push rule (`feedback_auto_commit_push.md`), af
 
 - **DO NOT** create assets via `InsertService:LoadAsset` of catalog items. Roblox blocks third-party items via trust policy (`Asset is not trusted` error at runtime). Even if it worked, copyright-wise the catalog license doesn't grant reuse rights to the experience owner.
 - **DO NOT** put prefabs in `ReplicatedStorage` or `ServerStorage`. The user has reported repeatedly they can't see those reliably in their Studio Explorer. Always `Workspace.Assets.<NomeDoAsset>`. (Recurring memory note: `feedback_assets_in_workspace_assets.md`.)
+- **DO NOT** spawn test dummies / scratch Models / debug Parts at `Workspace` root. They pollute the Explorer view and the user gets pissed. Test rigs go in `Workspace.Assets._TestRigs`; prefabs in `Workspace.Assets.<NomeDoAsset>`. **Anything created via MCP belongs inside `Workspace.Assets`** — no exceptions.
 - **DO NOT** leave test dummies in the place after validation. They'd ship with the place file and clutter Workspace forever. Always cleanup before reporting DONE.
 - **DO NOT** write `Attachment.CFrame = handleOffset` (without `:Inverse()`). The math is `Attachment.CFrame = handleOffset:Inverse()` so that after Roblox's weld inverts it during equip, the handle ends up at `bodyAtt * handleOffset`.
 - **DO NOT** write `extra.CFrame = handleOffset:Inverse() * partOffset`. The correct formula is `extra.CFrame = handleOffset * partOffset`. Verified empirically last session — got the math wrong twice before locking it.
