@@ -156,7 +156,10 @@ local Constants = {
 		-- desse raio (XY plane, só pra frente no eixo do facing), cancela o
 		-- lunge pra char não atravessar o oponente. Hitbox ainda conecta (é
 		-- resolvida server-side), o cancel só impede o "phase through".
-		LungeBlockRadius = 3.5,
+		-- Calibrado pra parar o lunge ANTES de tocar o PlayerHitbox alheio
+		-- (~4 wide). Sem essa margem, LinearVelocity com MaxForce=huge
+		-- empurra o alvo via constraint quando bate no hitbox volumétrico.
+		LungeBlockRadius = 5.0,
 	},
 	-- Lag compensation (B1): snapshot ring buffer das posições dos players no
 	-- servidor, permitindo resolver hitbox contra a posição que o atacante
@@ -192,9 +195,20 @@ local Constants = {
 		JumpHeight = 14.4,
 		JumpPower = 100,
 	},
+	-- Hitbox volumétrico anexado ao char pra colisão player↔player coerente.
+	-- Sem ele, players clipam via body parts pequenos (HRP 2x2x1, accessory
+	-- bounds variando). Welded à HRP, invisível, CanCollide=true. Outros
+	-- player-hitboxes bloqueiam (group PlayerHitbox vs PlayerHitbox = true);
+	-- não interage com body parts próprios nem com terreno (terreno é
+	-- responsabilidade dos parts do corpo).
+	PlayerHitbox = {
+		Size = Vector3.new(4, 6, 2),
+		PartName = "PlayerHitbox",
+	},
 	CollisionGroups = {
 		Players = "BrawlPlayers",
 		PlayersDodging = "BrawlPlayersDodging",
+		PlayerHitbox = "BrawlPlayerHitbox",
 	},
 	Tags = {
 		JumpThroughPlatform = "BrawlJumpThrough",

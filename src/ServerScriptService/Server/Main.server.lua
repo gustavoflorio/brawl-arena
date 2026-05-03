@@ -16,10 +16,16 @@ StarterPlayer.CharacterWalkSpeed = Constants.PlayerMovement.WalkSpeed
 StarterPlayer.CharacterJumpHeight = Constants.PlayerMovement.JumpHeight
 StarterPlayer.CharacterJumpPower = Constants.PlayerMovement.JumpPower
 
--- Collision groups: durante dodge, character fica no grupo "Dodging" que
--- não colide com "Players", permitindo atravessar outros players.
+-- Collision groups:
+-- - Players (body parts do char): colide com terreno (Default) e entre si.
+-- - PlayersDodging: aplicado em todos os parts do char durante o dodge —
+--   atravessa Players, PlayerHitbox e outros Dodging.
+-- - PlayerHitbox: part invisível volumétrico anexado à HRP. Bloca outros
+--   PlayerHitbox (impede players atravessarem). Não cata terreno (responsabilidade
+--   do body), e não duplica colisão com body parts (próprio ou de outros).
 local GROUP_PLAYERS = Constants.CollisionGroups.Players
 local GROUP_DODGING = Constants.CollisionGroups.PlayersDodging
+local GROUP_HITBOX = Constants.CollisionGroups.PlayerHitbox
 pcall(function()
 	PhysicsService:RegisterCollisionGroup(GROUP_PLAYERS)
 end)
@@ -27,9 +33,17 @@ pcall(function()
 	PhysicsService:RegisterCollisionGroup(GROUP_DODGING)
 end)
 pcall(function()
+	PhysicsService:RegisterCollisionGroup(GROUP_HITBOX)
+end)
+pcall(function()
 	PhysicsService:CollisionGroupSetCollidable(GROUP_DODGING, GROUP_PLAYERS, false)
 	PhysicsService:CollisionGroupSetCollidable(GROUP_DODGING, GROUP_DODGING, false)
 	PhysicsService:CollisionGroupSetCollidable(GROUP_PLAYERS, GROUP_PLAYERS, true)
+	-- PlayerHitbox: bloca outros hitboxes (player↔player). Não interage com
+	-- body parts (próprios ou de outros) — body lida com terreno separadamente.
+	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_HITBOX, true)
+	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_PLAYERS, false)
+	PhysicsService:CollisionGroupSetCollidable(GROUP_HITBOX, GROUP_DODGING, false)
 end)
 
 local function ensureRemotes()

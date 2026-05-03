@@ -488,11 +488,46 @@ end
 -- Passive XP drip removido: XP agora vem apenas de kills (via KillProcessor).
 
 local function setCharacterCollisionGroup(character: Model, groupName: string)
+	-- O part PlayerHitbox tem ciclo de collision-group próprio (PlayerHitbox
+	-- vs PlayersDodging dependendo do estado), gerenciado pelo CombatService
+	-- durante dodge. Pulamos ele aqui pra não sobrescrever incorretamente.
+	local hitboxName = Constants.PlayerHitbox.PartName
 	for _, descendant in ipairs(character:GetDescendants()) do
-		if descendant:IsA("BasePart") then
+		if descendant:IsA("BasePart") and descendant.Name ~= hitboxName then
 			descendant.CollisionGroup = groupName
 		end
 	end
+end
+
+local function attachPlayerHitbox(character: Model): BasePart?
+	-- Cria part invisível volumétrico welded à HRP. Tamanho > body parts pra
+	-- impedir clipping entre players. Massless pra não afetar physics da rig.
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp or not hrp:IsA("BasePart") then
+		return nil
+	end
+	local existing = character:FindFirstChild(Constants.PlayerHitbox.PartName)
+	if existing and existing:IsA("BasePart") then
+		return existing
+	end
+	local hitbox = Instance.new("Part")
+	hitbox.Name = Constants.PlayerHitbox.PartName
+	hitbox.Size = Constants.PlayerHitbox.Size
+	hitbox.Transparency = 1
+	hitbox.CanCollide = true
+	hitbox.CanQuery = false
+	hitbox.CanTouch = false
+	hitbox.Massless = true
+	hitbox.CastShadow = false
+	hitbox.Anchored = false
+	hitbox.CollisionGroup = Constants.CollisionGroups.PlayerHitbox
+	hitbox.CFrame = hrp.CFrame
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = hrp
+	weld.Part1 = hitbox
+	weld.Parent = hitbox
+	hitbox.Parent = character
+	return hitbox
 end
 
 function ArenaService:_onPlayerAdded(player: Player)
@@ -513,8 +548,17 @@ function ArenaService:_onPlayerAdded(player: Player)
 		-- Marca todos os BaseParts do character no grupo de colisão "Players"
 		-- (default). Dodge vai trocar temporariamente pra "PlayersDodging".
 		setCharacterCollisionGroup(character, Constants.CollisionGroups.Players)
+		-- Anexa o hitbox volumétrico (invisível) DEPOIS do bulk set — assim
+		-- ele entra com seu próprio collision group e não é sobrescrito.
+		attachPlayerHitbox(character)
+		local hitboxName = Constants.PlayerHitbox.PartName
 		character.DescendantAdded:Connect(function(descendant)
 			if descendant:IsA("BasePart") then
+				-- Hitbox custom não passa por essa pipeline (collision group
+				-- é setado em attachPlayerHitbox).
+				if descendant.Name == hitboxName then
+					return
+				end
 				-- Novo part (ex: accessory): respeita o grupo atual.
 				local isDodging = (descendant.CollisionGroup == Constants.CollisionGroups.PlayersDodging)
 				if not isDodging then

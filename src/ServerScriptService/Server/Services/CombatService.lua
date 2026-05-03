@@ -752,10 +752,21 @@ function CombatService:_handleDIRequest(player: Player, inputX: number)
 	entry.setAt = now
 end
 
-local function setDescendantCollisionGroup(character: Model, groupName: string)
+local function setDescendantCollisionGroup(character: Model, bodyGroup: string)
+	-- Hitbox volumétrico (PlayerHitbox part) tem ciclo de grupo separado:
+	-- durante dodge entra junto no grupo PlayersDodging (passa por tudo);
+	-- fora do dodge volta pro próprio grupo PlayerHitbox (que bloca outros
+	-- player-hitboxes mas não interage com body parts/terreno).
+	local hitboxName = Constants.PlayerHitbox.PartName
+	local dodgingGroup = Constants.CollisionGroups.PlayersDodging
+	local hitboxGroup = Constants.CollisionGroups.PlayerHitbox
 	for _, descendant in ipairs(character:GetDescendants()) do
 		if descendant:IsA("BasePart") then
-			descendant.CollisionGroup = groupName
+			if descendant.Name == hitboxName then
+				descendant.CollisionGroup = if bodyGroup == dodgingGroup then dodgingGroup else hitboxGroup
+			else
+				descendant.CollisionGroup = bodyGroup
+			end
 		end
 	end
 end
