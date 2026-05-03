@@ -10,6 +10,7 @@ local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Classes = require(sharedFolder:WaitForChild("Classes"))
+local Profiling = require(sharedFolder:WaitForChild("Profiling"))
 
 type Services = { [string]: any }
 
@@ -320,6 +321,10 @@ end
 local function bumpSeqAttribute(character: Model, attrName: string)
 	local current = character:GetAttribute(attrName)
 	local nextVal = (typeof(current) == "number" and current or 0) + 1
+	-- Profiling: stampa server time ANTES do bump pra que o stamp e o seq
+	-- replique no mesmo network frame. Cliente lê o stamp no listener e
+	-- computa delta_ms = chegada - envio.
+	Profiling.StampSeq(character, attrName)
 	character:SetAttribute(attrName, nextVal)
 end
 
@@ -750,6 +755,16 @@ function CombatService:_handlePunchRequest(player: Player, isHeavy: boolean, cli
 	local arenaService = (self._services :: Services).ArenaService
 	if arenaService:GetState(player) ~= Constants.PlayerState.InArena then
 		return
+	end
+	-- Profiling: input latency = serverNow - clientTime. Mede o RTT efetivo
+	-- entre o player apertar M1 e o servidor processar a request.
+	if clientTime and Profiling.IsEnabled("InputLatency") then
+		local delta_ms = (Workspace:GetServerTimeNow() - clientTime) * 1000
+		Profiling.Log("InputLatency", {
+			action = if isHeavy then "HeavyPunch" else "Punch",
+			player = player.Name,
+			delta_ms = math.floor(delta_ms + 0.5),
+		})
 	end
 	if not self:_checkRateLimit(player) then
 		return

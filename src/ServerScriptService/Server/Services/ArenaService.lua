@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
+local Profiling = require(sharedFolder:WaitForChild("Profiling"))
 
 type Services = { [string]: any }
 
@@ -309,6 +310,7 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 		if character then
 			local current = character:GetAttribute(Constants.CharacterAttributes.EliminationSeq)
 			local nextSeq = (typeof(current) == "number" and current or 0) + 1
+			Profiling.StampSeq(character, Constants.CharacterAttributes.EliminationSeq)
 			character:SetAttribute(Constants.CharacterAttributes.EliminationSeq, nextSeq)
 		end
 		if services and services.AnalyticsService then

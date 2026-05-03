@@ -9,6 +9,7 @@ local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Classes = require(sharedFolder:WaitForChild("Classes"))
+local Profiling = require(sharedFolder:WaitForChild("Profiling"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -506,6 +507,7 @@ local function bindEliminationListener(character: Model)
 			return
 		end
 		lastSeen = seq
+		Profiling.LogSeqArrival(character, ELIM_SEQ_ATTR, seq, "Elimination")
 		playEliminationSound()
 	end)
 end
@@ -540,6 +542,7 @@ local function bindHitStopListener(character: Model, fxController: any)
 			return
 		end
 		lastSeen = seq
+		Profiling.LogSeqArrival(character, HITSTOP_SEQ_ATTR, seq, "HitStop")
 		local until_ = character:GetAttribute(HITSTOP_UNTIL_ATTR)
 		if typeof(until_) ~= "number" then
 			return
@@ -624,6 +627,7 @@ local function bindKnockbackListener(character: Model)
 			return
 		end
 		lastSeen = seq
+		Profiling.LogSeqArrival(character, KB_SEQ_ATTR, seq, "Knockback")
 		local velocity = character:GetAttribute(KB_VEL_ATTR)
 		if typeof(velocity) ~= "Vector3" then
 			return
@@ -713,6 +717,11 @@ local function bindHitVFXListener(character: Model)
 			return
 		end
 		lastSeen = seq
+		-- Profiling: log uma vez por bump (este listener roda pra TODOS os
+		-- chars no client, então captura a perspectiva de cada client sobre
+		-- replicação de hits — incluindo quando alguém vê outro player ser
+		-- hitado vs ser hitado ele mesmo).
+		Profiling.LogSeqArrival(character, HIT_SEQ_ATTR, seq, "Hit")
 		local kind = character:GetAttribute(HIT_KIND_ATTR)
 		local isHeavy = kind == "Heavy"
 		local dmgAttr = character:GetAttribute(DAMAGE_PERCENT_ATTR)

@@ -195,6 +195,17 @@ local Constants = {
 		JumpHeight = 14.4,
 		JumpPower = 100,
 	},
+	-- Profiling diagnóstico de desync. Quando Enabled=true, servidor estampa
+	-- timestamp em cada bump de seq replicado, cliente computa delta de
+	-- replicação na chegada e printa. Habilitar SOMENTE em testing — em
+	-- produção gera ~30 prints/s por player + 1 attribute extra por evento.
+	Profiling = {
+		Enabled = true,
+		-- Per-category toggles: false = silencia essa categoria. Útil pra
+		-- isolar (e.g., desligar StateReplication enquanto debuga InputLatency).
+		StateReplication = true,
+		InputLatency = true,
+	},
 	-- Hitbox volumétrico anexado ao char pra colisão player↔player coerente.
 	-- Sem ele, players clipam via body parts pequenos (HRP 2x2x1, accessory
 	-- bounds variando). Welded à HRP, invisível, CanCollide=true. Outros
