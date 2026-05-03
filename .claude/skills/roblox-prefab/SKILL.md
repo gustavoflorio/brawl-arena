@@ -58,24 +58,224 @@ Before building, declare which tier you're targeting. The user pissed off at v1/
 - **Plugin context cannot set `MeshId` directly** — it's `NotAccessible`. The `InsertService:LoadAsset` route is the workaround; the loaded MeshPart already has MeshId baked in.
 
 **Tier 3 — Procedural EditableMesh (RECOMMENDED for owned IP + pro quality)**
-- Effort: 30-60 min per asset (write generator code in Lua).
-- Visual ceiling: smooth curved 3D geometry. Better than primitives, slightly less polished than hand-modeled custom (no UV-mapped textures unless you also generate UVs + apply Texture).
+- Effort: 30-90 min per asset (write generator code in Lua).
+- Visual ceiling: smooth curved 3D geometry com superellipsoid + multiple welded MeshParts. Better than primitives, slightly less polished than hand-modeled custom (no UV-mapped textures unless you also generate UVs + apply Texture).
 - 100% owned IP — geometry written by you, no asset upload, zero copyright concerns.
-- Pattern:
-  ```lua
-  local AssetService = game:GetService("AssetService")
+- API caveats:
+  - `EditableMesh:SetVertexColor` does NOT exist; use `AddColor` + `SetFaceColors` for per-vertex color, OR (simpler) one MeshPart per color region welded together.
+  - `MeshPart.MeshId` is `NotAccessible` to plugin context — that's why we generate via `CreateMeshPartAsync`.
+  - Multi-color path: build a separate `EditableMesh` per color region, call `CreateMeshPartAsync` for each, set `MeshPart.Color` on each, weld all under one Accessory.
+
+#### Required helper library (copy into your build script)
+
+These are battle-tested helpers that produce professional-quality mesh shapes. Use them verbatim — they handle the math correctly (signs, parametrization, capped ends).
+
+```lua
+local AssetService = game:GetService("AssetService")
+
+-- Signed power: sign(x) * |x|^exp. Pra superellipsoid parametrization correta.
+local function sp(angle, exp, useSin)
+  local v = useSin and math.sin(angle) or math.cos(angle)
+  if v == 0 then return 0 end
+  local sign = (v >= 0) and 1 or -1
+  return sign * (math.abs(v) ^ exp)
+end
+
+-- Superellipsoid: |x/a|^m + |y/b|^m + |z/c|^m = 1
+--   m=n=2     → sphere/ellipsoid (round)
+--   m=n=2.5   → fist-like rounded shape (good pro look)
+--   m=n=4     → rounded cube
+--   m=n=large → cube
+-- Y é eixo polar vertical. knuckleBulge empurra +Z extra na metade superior front
+-- (cria ressalto frontal estilo "nós dos dedos").
+local function buildSuperellipsoid(latSeg, lonSeg, a, b, c, m, n, knuckleBulge)
   local em = AssetService:CreateEditableMesh()
-  -- AddVertex returns vertexId; AddTriangle returns faceId
-  local v1 = em:AddVertex(Vector3.new(0, 0, 0))
-  -- ... build verts + triangles in a loop
-  local mp = AssetService:CreateMeshPartAsync(Content.fromObject(em))
-  mp.Color = Color3.fromRGB(140, 25, 25)
-  mp.Material = Enum.Material.SmoothPlastic
-  -- Now mp is a real MeshPart with custom geometry, owned by us
-  ```
-- Helpers: UV sphere (latSeg × lonSeg grid → quads → 2 triangles each); capped cylinder (top ring + bottom ring + side quads + center fan caps).
-- **Multi-color via separate meshes**: `EditableMesh:SetVertexColor` doesn't exist (use `AddColor` + `SetFaceColors` if you need vertex colors). Simpler: one MeshPart per color region, weld them together (Handle + decoratives via WeldConstraint, same pattern as Tier 1 primitive composition).
-- Reference: see `Workspace.Assets.BrawlClassAccessories.Boxer.BoxerLeftGlove` post-v4 (procedural fist + cuff + trim).
+  local verts = {}
+  for lat = 0, latSeg do
+    verts[lat] = {}
+    local u = -math.pi/2 + (lat / latSeg) * math.pi
+    for lon = 0, lonSeg do
+      local v = -math.pi + (lon / lonSeg) * math.pi * 2
+      local x = a * sp(u, 2/m, false) * sp(v, 2/n, false)
+      local y = b * sp(u, 2/m, true)
+      local z = c * sp(u, 2/m, false) * sp(v, 2/n, true)
+      if knuckleBulge and y > 0 and z > 0 then
+        z = z + knuckleBulge * (y / b) * (z / c)
+      end
+      verts[lat][lon] = em:AddVertex(Vector3.new(x, y, z))
+    end
+  end
+  for lat = 0, latSeg - 1 do
+    for lon = 0, lonSeg - 1 do
+      local va, vb = verts[lat][lon], verts[lat][lon + 1]
+      local vc, vd = verts[lat + 1][lon], verts[lat + 1][lon + 1]
+      em:AddTriangle(va, vb, vc)
+      em:AddTriangle(vb, vd, vc)
+    end
+  end
+  return em
+end
+
+-- Capped cylinder around Y axis. yBottom..yTop, segments lateral count.
+local function buildCappedCylinder(yBottom, yTop, radius, segments)
+  local em = AssetService:CreateEditableMesh()
+  local bottom, top = {}, {}
+  for s = 0, segments - 1 do
+    local phi = (s / segments) * math.pi * 2
+    local x, z = radius * math.cos(phi), radius * math.sin(phi)
+    bottom[s + 1] = em:AddVertex(Vector3.new(x, yBottom, z))
+    top[s + 1]    = em:AddVertex(Vector3.new(x, yTop, z))
+  end
+  for s = 0, segments - 1 do
+    local b1, b2 = bottom[s + 1], bottom[((s + 1) % segments) + 1]
+    local t1, t2 = top[s + 1], top[((s + 1) % segments) + 1]
+    em:AddTriangle(b1, t1, b2); em:AddTriangle(b2, t1, t2)
+  end
+  local cb = em:AddVertex(Vector3.new(0, yBottom, 0))
+  local ct = em:AddVertex(Vector3.new(0, yTop, 0))
+  for s = 0, segments - 1 do
+    local b1, b2 = bottom[s + 1], bottom[((s + 1) % segments) + 1]
+    local t1, t2 = top[s + 1], top[((s + 1) % segments) + 1]
+    em:AddTriangle(cb, b2, b1); em:AddTriangle(ct, t1, t2)
+  end
+  return em
+end
+
+-- Box (rectangular prism, 8 verts + 12 tris). Pra lacing strips, details pequenos.
+local function buildBox(sx, sy, sz)
+  local em = AssetService:CreateEditableMesh()
+  local hx, hy, hz = sx/2, sy/2, sz/2
+  local v = {
+    em:AddVertex(Vector3.new(-hx, -hy, -hz)), em:AddVertex(Vector3.new(hx, -hy, -hz)),
+    em:AddVertex(Vector3.new(hx, -hy, hz)),   em:AddVertex(Vector3.new(-hx, -hy, hz)),
+    em:AddVertex(Vector3.new(-hx, hy, -hz)),  em:AddVertex(Vector3.new(hx, hy, -hz)),
+    em:AddVertex(Vector3.new(hx, hy, hz)),    em:AddVertex(Vector3.new(-hx, hy, hz)),
+  }
+  local function quad(a,b,c,d) em:AddTriangle(v[a], v[b], v[c]); em:AddTriangle(v[a], v[c], v[d]) end
+  quad(1,2,3,4); quad(5,8,7,6); quad(1,5,6,2); quad(4,3,7,8); quad(1,4,8,5); quad(2,6,7,3)
+  return em
+end
+
+local function configurePart(p)
+  p.CanCollide = false; p.CanQuery = false; p.CanTouch = false
+  p.Massless = true; p.Anchored = true
+end
+
+-- Builds an Accessory with Handle = first mesh, decoratives welded with offset.
+-- layout = { { mp = MeshPart, name = string, cf = CFrame relative to Handle } }
+local function buildAccessoryFromMeshes(name, attachmentName, handleMP, layout, mirror)
+  local accessory = Instance.new("Accessory")
+  accessory.Name = name
+  local handle = handleMP:Clone()
+  handle.Name = "Handle"
+  configurePart(handle)
+  handle.CFrame = CFrame.new()
+  handle.Parent = accessory
+  local att = Instance.new("Attachment")
+  att.Name = attachmentName
+  if mirror then att.CFrame = CFrame.Angles(0, math.rad(180), 0) end
+  att.Parent = handle
+  for _, item in ipairs(layout) do
+    local clone = item.mp:Clone()
+    clone.Name = item.name
+    configurePart(clone)
+    clone.CFrame = handle.CFrame * item.cf
+    clone.Parent = accessory
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = handle; weld.Part1 = clone; weld.Parent = handle
+  end
+  return accessory
+end
+
+-- Move accessory inteiro (handle + welded decoratives) preservando offsets
+local function moveAccessory(accessory, newHandlePos)
+  local handle = accessory:FindFirstChild("Handle")
+  local delta = newHandlePos - handle.Position
+  for _, p in ipairs(accessory:GetDescendants()) do
+    if p:IsA("BasePart") then p.Position = p.Position + delta end
+  end
+end
+```
+
+#### Boxing glove recipe (proven v5 — produces actual leather-looking glove with cuff + lacing)
+
+```lua
+local LEATHER_RED  = Color3.fromRGB(155, 30, 30)
+local CUFF_WHITE   = Color3.fromRGB(240, 235, 220)
+local CUFF_TRIM    = Color3.fromRGB(220, 175, 80)
+local LACE_BLACK   = Color3.fromRGB(15, 15, 15)
+
+-- 1) Fist: superellipsoid m=n=2.5 (rounded cube), elongated +Z (depth 0.85),
+--    squashed Y (height 0.55), knuckle bulge 0.18. 16 lat × 24 lon = ~432 verts.
+local fistEm = buildSuperellipsoid(16, 24, 0.65, 0.55, 0.85, 2.5, 2.5, 0.18)
+local fistMP = AssetService:CreateMeshPartAsync(Content.fromObject(fistEm))
+fistMP.Color = LEATHER_RED
+fistMP.Material = Enum.Material.SmoothPlastic
+fistMP.Reflectance = 0.07
+
+-- 2) Thumb: pequeno ellipsoid (10x14, m=n=2 = round)
+local thumbEm = buildSuperellipsoid(10, 14, 0.25, 0.28, 0.32, 2, 2, 0)
+local thumbMP = AssetService:CreateMeshPartAsync(Content.fromObject(thumbEm))
+thumbMP.Color = LEATHER_RED
+thumbMP.Material = Enum.Material.SmoothPlastic
+thumbMP.Reflectance = 0.07
+
+-- 3) Cuff: cilindro longo (yBottom=-0.55..yTop=0.05, 0.6 stud altura), 24 seg
+local cuffMP = AssetService:CreateMeshPartAsync(
+  Content.fromObject(buildCappedCylinder(-0.55, 0.05, 0.5, 24)))
+cuffMP.Color = CUFF_WHITE; cuffMP.Material = Enum.Material.Fabric
+
+-- 4) Trim: anel fino dourado (-0.05..0.05, ligeiramente maior raio que cuff)
+local trimMP = AssetService:CreateMeshPartAsync(
+  Content.fromObject(buildCappedCylinder(-0.05, 0.05, 0.55, 24)))
+trimMP.Color = CUFF_TRIM; trimMP.Material = Enum.Material.SmoothPlastic
+trimMP.Reflectance = 0.20
+
+-- 5) Lacing: 1 vertical + 3 horizontal cross stripes, fabric preto fino
+local laceVertMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.07, 0.45, 0.05)))
+laceVertMP.Color = LACE_BLACK; laceVertMP.Material = Enum.Material.Fabric
+local laceHorizMP = AssetService:CreateMeshPartAsync(Content.fromObject(buildBox(0.32, 0.05, 0.05)))
+laceHorizMP.Color = LACE_BLACK; laceHorizMP.Material = Enum.Material.Fabric
+
+-- 6) Assemble: Fist é Handle. Thumb pra lateral, Cuff abaixo, Trim entre.
+--    Lacing na frente do cuff (Z=+0.5).
+local function gloveLayout(mirror)
+  local thumbX = mirror and -0.45 or 0.45
+  return {
+    { mp = thumbMP,     name = "Thumb",    cf = CFrame.new(thumbX, -0.1, 0.25) },
+    { mp = cuffMP,      name = "Cuff",     cf = CFrame.new(0, -0.85, 0) },
+    { mp = trimMP,      name = "Trim",     cf = CFrame.new(0, -0.40, 0) },
+    { mp = laceVertMP,  name = "LaceVert", cf = CFrame.new(0, -0.85, 0.50) },
+    { mp = laceHorizMP, name = "LaceTop",  cf = CFrame.new(0, -0.65, 0.50) },
+    { mp = laceHorizMP, name = "LaceMid",  cf = CFrame.new(0, -0.85, 0.50) },
+    { mp = laceHorizMP, name = "LaceBot",  cf = CFrame.new(0, -1.05, 0.50) },
+  }
+end
+
+local lglove = buildAccessoryFromMeshes("BoxerLeftGlove", "LeftGripAttachment", fistMP, gloveLayout(false), false)
+local rglove = buildAccessoryFromMeshes("BoxerRightGlove", "RightGripAttachment", fistMP, gloveLayout(true), true)
+-- Cleanup mesh templates (não precisam ficar fora dos accessories)
+fistMP:Destroy(); thumbMP:Destroy(); cuffMP:Destroy(); trimMP:Destroy()
+laceVertMP:Destroy(); laceHorizMP:Destroy()
+```
+
+**Tuning knobs** (ajusta visualmente, sem quebrar a estrutura):
+
+| Param | v5 default | Range | Effect |
+|---|---|---|---|
+| superellipsoid `m`/`n` | 2.5 | 2 (sphere) → 4 (rounded cube) | Higher = mais cubóide |
+| `knuckleBulge` | 0.18 | 0 → 0.3 | Saliência frontal dos nós |
+| fist `(a,b,c)` | (0.65, 0.55, 0.85) | scale to taste | width / height / depth |
+| `Reflectance` | 0.07 (fist), 0.20 (trim) | 0 → 0.5 | "Brilho de couro" |
+| latSeg/lonSeg | 16/24 | 8/12 → 24/36 | Smoothness vs poly count |
+| `Material` (fist) | SmoothPlastic | Plastic, Slate, Glass, Metal | Surface look |
+
+#### Other shape recipes
+
+- **Bandage wrap (Taekwon-style)**: `buildCappedCylinder(-0.4, 0.4, 0.4, 16)` body + thin colored stripe via second cylinder slightly larger radius. Material=Fabric.
+- **Tutu (Ballerina-style)**: `buildCappedCylinder(-0.05, 0.05, 2.0, 32)` flat wide disc. Add ribbon ring via second cylinder slightly below. Material=Fabric.
+- **Helmet/hat**: superellipsoid m=n=3, c < a < b (taller than wide).
+- **Sword hilt**: capped cylinder + box + capped cylinder (handle, guard, pommel) welded.
 
 **Tier 4 — Custom uploaded meshes (Blender etc.)**
 - Effort: hours-days (Blender modeling + texture painting + Roblox asset upload).
