@@ -2,13 +2,14 @@
 
 -- ClassAccessoryService: aplica acessórios diegéticos por classe (luvas pro Boxer,
 -- wraps pro Taekwon, tutu pra Ballerina) no Character. Os prefabs são Accessory
--- instances criadas em Studio (vivem em ReplicatedStorage.BrawlClassAccessories,
+-- instances criadas em Studio (vivem em Workspace.BrawlClassAccessories,
 -- editáveis visualmente no editor) — service só clona e parenta.
 --
--- Por que ReplicatedStorage e não ServerStorage:
---   ServerStorage seria suficiente em runtime (server clona, parenta no Character
---   replicado). Mas ReplicatedStorage permite que clientes leiam prefabs também
---   (ex: preview no shop UI futuro). Custo negligível (5 prefabs pequenos).
+-- Por que Workspace:
+--   ReplicatedStorage seria mais "correto" semanticamente, mas é mais difícil de
+--   encontrar/editar no Studio Explorer. Workspace é o painel sempre aberto onde
+--   o user vê tudo. Custo: prefabs renderizam no mundo (anchored, longe da arena
+--   em Y=50). Trade off: workflow > limpeza de organização.
 --
 -- Por que não InsertService:LoadAsset (catalog):
 --   Roblox bloqueia LoadAsset de items de creators terceiros (trust policy)
@@ -20,6 +21,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Classes = require(sharedFolder:WaitForChild("Classes"))
@@ -41,7 +43,7 @@ ClassAccessoryService._prefabsFolder = nil :: Folder?
 local function getPrefabsFolder(): Folder?
 	-- Lazy lookup: se prefabs não tão lá ainda no Init, espera pacientemente.
 	-- Em produção, prefabs vivem no place file (Studio editor save), não no Rojo.
-	return ReplicatedStorage:FindFirstChild(PREFABS_FOLDER_NAME) :: Folder?
+	return Workspace:FindFirstChild(PREFABS_FOLDER_NAME) :: Folder?
 end
 
 local function removeClassAccessories(character: Model)
@@ -86,7 +88,7 @@ function ClassAccessoryService:Init(services: Services)
 	self._prefabsFolder = getPrefabsFolder()
 	if not self._prefabsFolder then
 		warn(string.format(
-			"[ClassAccessoryService] %s folder not found in ReplicatedStorage. " ..
+			"[ClassAccessoryService] %s folder not found in Workspace. " ..
 			"Accessories won't be applied. Verifica que os prefabs foram salvos no place.",
 			PREFABS_FOLDER_NAME
 		))
