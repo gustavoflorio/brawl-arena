@@ -57,12 +57,32 @@ Before building, declare which tier you're targeting. The user pissed off at v1/
 - **Copyright caveat**: Roblox-official items (creatorName="Roblox") are safest. 3rd-party UGC technically belongs to the original creator; redistributing in a competing game is gray area and could DMCA-risk if the game grows. For brawl-arena, prefer Roblox-official meshes; if using 3rd-party, log the original asset URL as attribution.
 - **Plugin context cannot set `MeshId` directly** — it's `NotAccessible`. The `InsertService:LoadAsset` route is the workaround; the loaded MeshPart already has MeshId baked in.
 
-**Tier 3 — Custom uploaded meshes**
-- Effort: hours-days (Blender modeling + texture painting + Roblox upload).
-- Visual ceiling: anything you can model. Highest quality; fully owned IP.
-- Workflow: outside this skill's scope (3D modeling tools required). After upload, plug new asset IDs into a Tier 2-style flow.
+**Tier 3 — Procedural EditableMesh (RECOMMENDED for owned IP + pro quality)**
+- Effort: 30-60 min per asset (write generator code in Lua).
+- Visual ceiling: smooth curved 3D geometry. Better than primitives, slightly less polished than hand-modeled custom (no UV-mapped textures unless you also generate UVs + apply Texture).
+- 100% owned IP — geometry written by you, no asset upload, zero copyright concerns.
+- Pattern:
+  ```lua
+  local AssetService = game:GetService("AssetService")
+  local em = AssetService:CreateEditableMesh()
+  -- AddVertex returns vertexId; AddTriangle returns faceId
+  local v1 = em:AddVertex(Vector3.new(0, 0, 0))
+  -- ... build verts + triangles in a loop
+  local mp = AssetService:CreateMeshPartAsync(Content.fromObject(em))
+  mp.Color = Color3.fromRGB(140, 25, 25)
+  mp.Material = Enum.Material.SmoothPlastic
+  -- Now mp is a real MeshPart with custom geometry, owned by us
+  ```
+- Helpers: UV sphere (latSeg × lonSeg grid → quads → 2 triangles each); capped cylinder (top ring + bottom ring + side quads + center fan caps).
+- **Multi-color via separate meshes**: `EditableMesh:SetVertexColor` doesn't exist (use `AddColor` + `SetFaceColors` if you need vertex colors). Simpler: one MeshPart per color region, weld them together (Handle + decoratives via WeldConstraint, same pattern as Tier 1 primitive composition).
+- Reference: see `Workspace.Assets.BrawlClassAccessories.Boxer.BoxerLeftGlove` post-v4 (procedural fist + cuff + trim).
 
-**Recommendation**: When user asks for "professional", they almost always want Tier 2. Don't try to deliver Tier 2-quality with Tier 1 techniques — primitive composition has a hard ceiling that no amount of part-stacking breaks through. Be honest with the user about which tier you're shipping.
+**Tier 4 — Custom uploaded meshes (Blender etc.)**
+- Effort: hours-days (Blender modeling + texture painting + Roblox asset upload).
+- Visual ceiling: anything you can model. Highest quality; fully owned IP. UV-mapped textures, normal maps, PBR.
+- Workflow: outside this skill's scope (3D modeling tools required). After upload, plug new asset IDs into a Tier 2-style flow but with assets you legally own.
+
+**Recommendation**: When user asks for "professional + clean IP", **go straight to Tier 3 procedural**. It's the sweet spot: real 3D geometry (not blocky), no asset upload (no Blender required), zero copyright issues. Don't promise primitive composition (Tier 1) can match catalog quality — it physically cannot. Tier 2 catalog reuse is fast but legal-gray for UGC; only safe with Roblox-official meshes (creatorName="Roblox").
 
 ## Phases
 
