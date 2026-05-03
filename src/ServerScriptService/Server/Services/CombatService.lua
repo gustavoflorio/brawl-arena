@@ -132,7 +132,12 @@ local function isInvincible(player: Player): boolean
 	if typeof(until_) ~= "number" then
 		return false
 	end
-	return os.clock() < until_
+	-- InvincibleUntil é setado por ArenaService:TeleportToArena com
+	-- Workspace:GetServerTimeNow(). Comparar com os.clock() (server-local
+	-- CPU time) gera mismatch enorme — server uptime longo deixa o "until"
+	-- na casa dos milhares enquanto os.clock() está em dezenas, retornando
+	-- TRUE perpetuamente e bloqueando todos os hits no _findTargets.
+	return Workspace:GetServerTimeNow() < until_
 end
 
 local function resolveFacing(root: BasePart): Vector3
@@ -772,7 +777,13 @@ function CombatService:_handleDodgeRoll(player: Player)
 	if not character then
 		return
 	end
-	local invulnUntil = now + Constants.Combat.DodgeRollDurationSeconds
+	-- InvincibleUntil precisa estar na MESMA referência de tempo que ArenaService
+	-- usa (Workspace:GetServerTimeNow). Misturar os.clock() aqui faria isInvincible
+	-- ler um attribute potencialmente setado em duas escalas diferentes — o que
+	-- vence é o math.max, e os.clock() perderia sempre, anulando os i-frames
+	-- do dodge na prática.
+	local serverNow = Workspace:GetServerTimeNow()
+	local invulnUntil = serverNow + Constants.Combat.DodgeRollDurationSeconds
 	local current = character:GetAttribute(Constants.CharacterAttributes.InvincibleUntil)
 	if typeof(current) ~= "number" then
 		current = 0
