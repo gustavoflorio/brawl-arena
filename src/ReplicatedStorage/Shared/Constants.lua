@@ -157,8 +157,8 @@ local Constants = {
 		DodgeRollVelocityMultiplier = 1.5,
 		DodgeRollAnimSpeedMultiplier = 2.0,
 		DoubleJumpVelocity = 75,
-		KnockbackBase = 40,
-		KnockbackGrowth = 0.5,
+		KnockbackBase = 20,
+		KnockbackGrowth = 1.0,
 		KnockbackVertical = 35,
 		-- Rate limit: 3 jabs + heavy + dodge em ~1s é possível em combo agressivo.
 		-- Margem pra 8 requests evita engasgo legítimo enquanto ainda bloqueia spam.
