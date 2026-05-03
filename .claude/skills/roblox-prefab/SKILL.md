@@ -39,11 +39,14 @@ This skill GUARANTEES:
 
 Before building, declare which tier you're targeting. The user pissed off at v1/v2 builds was a tier mismatch — primitive composition was being asked to match catalog-quality, which it physically can't.
 
-**Tier 1 — Primitive composition (Block/Ball/Cylinder + WeldConstraint)**
+> **CRITICAL — `CreateMeshPartAsync` BREAKS IN PLAYTEST.** `Content.fromObject(em)` is edit-mode only. `EditableMesh` is NOT an Instance and doesn't serialize to the place file. When playtest starts, server VM has no reference to the runtime EditableMesh → MeshPart renders as **white/grey blocks (in-game) or pink-checker (edit on reload)**. **Tier 3 procedural is NOT a viable runtime path until Roblox ships `AssetService:CreateAssetAsync` (currently "not available yet"). Default to Tier 1 primitives or Tier 2 catalog reuse.**
+
+**Tier 1 — Primitive composition (Block/Ball/Cylinder + WeldConstraint) — DEFAULT for runtime**
 - Effort: minutes per accessory.
-- Visual ceiling: looks like Lego. OK for prototypes, jam games, deliberately blocky aesthetic. **Will look amateur next to anything professional.**
-- Limitations: no curved geometry, no UV-mapped textures, no PBR. Color is per-Part flat.
-- Example: what we shipped as v1 + v2 of the Boxer/Taekwon/Ballerina prefabs. User feedback: "muito amador".
+- Visual ceiling: rounded but blocky. Better than people remember if you compose 6-8 parts thoughtfully (Ball with non-uniform Size = scaled ellipsoid, not pure sphere).
+- Limitations: no UV-textures, no PBR, no smooth curves beyond Ball/Cylinder.
+- **WORKS PERFECTLY in playtest** — Part instances replicate natively. This is the default for any prefab that needs to be playable.
+- v8 boxing glove recipe (8 primitive parts welded): Ball-fist (1.3×1.1×1.7) + Ball-thumb (offset side) + Cylinder-trim (rotated vertical) + Cylinder-cuff (rotated vertical) + 4 Block-laces. See "Boxing glove primitive recipe" section below.
 
 **Tier 2 — Catalog mesh reuse (clone MeshPart from `InsertService:LoadAsset`)**
 - Effort: minutes per accessory + 1 catalog research session.
@@ -57,7 +60,7 @@ Before building, declare which tier you're targeting. The user pissed off at v1/
 - **Copyright caveat**: Roblox-official items (creatorName="Roblox") are safest. 3rd-party UGC technically belongs to the original creator; redistributing in a competing game is gray area and could DMCA-risk if the game grows. For brawl-arena, prefer Roblox-official meshes; if using 3rd-party, log the original asset URL as attribution.
 - **Plugin context cannot set `MeshId` directly** — it's `NotAccessible`. The `InsertService:LoadAsset` route is the workaround; the loaded MeshPart already has MeshId baked in.
 
-**Tier 3 — Procedural EditableMesh (RECOMMENDED for owned IP + pro quality)**
+**Tier 3 — Procedural EditableMesh (EDIT-MODE ONLY — does NOT work in playtest, do not use for runtime prefabs)**
 - Effort: 30-90 min per asset (write generator code in Lua).
 - Visual ceiling: smooth curved 3D geometry com superellipsoid + multiple welded MeshParts. Better than primitives, slightly less polished than hand-modeled custom (no UV-mapped textures unless you also generate UVs + apply Texture).
 - 100% owned IP — geometry written by you, no asset upload, zero copyright concerns.
@@ -201,7 +204,76 @@ local function moveAccessory(accessory, newHandlePos)
 end
 ```
 
-#### Boxing glove recipe (proven v6 — zero-clipping geometry, leather + cuff + lacing)
+#### Boxing glove primitive recipe (v8 — Tier 1, REPLICATES IN PLAYTEST)
+
+```lua
+local LEATHER_RED  = Color3.fromRGB(155, 30, 30)
+local CUFF_WHITE   = Color3.fromRGB(240, 235, 220)
+local CUFF_TRIM    = Color3.fromRGB(220, 175, 80)
+local LACE_BLACK   = Color3.fromRGB(15, 15, 15)
+
+local function makePart(name, shape, size, color, material, reflectance)
+  local p = Instance.new("Part")
+  p.Name = name; p.Shape = shape; p.Size = size
+  p.Color = color; p.Material = material
+  if reflectance then p.Reflectance = reflectance end
+  p.CanCollide = false; p.CanQuery = false; p.CanTouch = false
+  p.Massless = true; p.Anchored = true
+  p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+  return p
+end
+
+-- Cylinder.Shape eixo é X. Pra ficar vertical (axis Y), rota Z 90°.
+-- Size.X = comprimento (vira altura), Size.Y/Z = diâmetro radial.
+local CYL_VERT = CFrame.Angles(0, 0, math.rad(90))
+
+local function buildGlove(name, attachmentName, mirror)
+  local accessory = Instance.new("Accessory"); accessory.Name = name
+  -- Handle: Ball com Size não-uniforme = ellipsoid escalado (Roblox suporta)
+  local handle = makePart("Handle", Enum.PartType.Ball,
+    Vector3.new(1.3, 1.1, 1.7), LEATHER_RED, Enum.Material.SmoothPlastic, 0.07)
+  handle.CFrame = CFrame.new()
+  handle.Parent = accessory
+  local att = Instance.new("Attachment"); att.Name = attachmentName
+  if mirror then att.CFrame = CFrame.Angles(0, math.rad(180), 0) end
+  att.Parent = handle
+  local thumbX = mirror and -0.65 or 0.65
+  local layout = {
+    { part = makePart("Thumb", Enum.PartType.Ball, Vector3.new(0.6, 0.6, 0.65),
+        LEATHER_RED, Enum.Material.SmoothPlastic, 0.07),
+      cf = CFrame.new(thumbX, -0.05, 0.20) },
+    { part = makePart("Trim", Enum.PartType.Cylinder, Vector3.new(0.10, 1.24, 1.24),
+        CUFF_TRIM, Enum.Material.SmoothPlastic, 0.20),
+      cf = CFrame.new(0, -0.60, 0) * CYL_VERT },
+    { part = makePart("Cuff", Enum.PartType.Cylinder, Vector3.new(0.9, 1.10, 1.10),
+        CUFF_WHITE, Enum.Material.Fabric),
+      cf = CFrame.new(0, -1.10, 0) * CYL_VERT },
+    { part = makePart("LaceVert", Enum.PartType.Block, Vector3.new(0.08, 0.7, 0.06),
+        LACE_BLACK, Enum.Material.Fabric),
+      cf = CFrame.new(0, -1.10, 0.59) },
+    { part = makePart("LaceTop", Enum.PartType.Block, Vector3.new(0.40, 0.06, 0.06),
+        LACE_BLACK, Enum.Material.Fabric),
+      cf = CFrame.new(0, -0.85, 0.59) },
+    { part = makePart("LaceMid", Enum.PartType.Block, Vector3.new(0.40, 0.06, 0.06),
+        LACE_BLACK, Enum.Material.Fabric),
+      cf = CFrame.new(0, -1.10, 0.59) },
+    { part = makePart("LaceBot", Enum.PartType.Block, Vector3.new(0.40, 0.06, 0.06),
+        LACE_BLACK, Enum.Material.Fabric),
+      cf = CFrame.new(0, -1.35, 0.59) },
+  }
+  for _, item in ipairs(layout) do
+    item.part.CFrame = handle.CFrame * item.cf
+    item.part.Parent = accessory
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = handle; weld.Part1 = item.part; weld.Parent = handle
+  end
+  return accessory
+end
+```
+
+#### (Legacy — DO NOT USE) Tier 3 procedural recipe — edit-mode only
+
+The recipe below uses `CreateMeshPartAsync` and looks beautiful in Studio but renders as **white blocks in playtest** (Object-source MeshContent doesn't replicate). Kept here for reference / future use IF Roblox ships `AssetService:CreateAssetAsync` (currently "not available yet").
 
 **Critical clipping rules** (learned from v5 failure):
 - Fist superellipsoid extends Y=-b to +b (b=0.55 → range -0.55 to +0.55). **Trim/cuff must be at Y < -b**, not anywhere inside that range.
