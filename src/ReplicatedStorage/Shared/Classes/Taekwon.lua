@@ -63,13 +63,6 @@ local Taekwon = {
 	HeavyKey = "DragonKick",
 	-- Dark violet (luminance ~0.30). Burst/kinetic energy read; sem overlap com damage gradient.
 	AccentColor = Color3.fromRGB(95, 50, 180),
-	-- Bandagens (wraps) nas mãos — striker/muay thai vibe. Asset IDs Roblox catalog
-	-- placeholder (Shoulder attachments — Roblox rig não tem foot attachment nativo,
-	-- então só hands por enquanto). Swap por arte custom + foot wraps depois.
-	AccessoryAssetIds = {
-		83401894772852, -- Bandage Wrap Glove Left R6
-		89718847680206, -- Bandage Wrap Glove Right R6
-	} :: { number },
 }
 
 return Taekwon

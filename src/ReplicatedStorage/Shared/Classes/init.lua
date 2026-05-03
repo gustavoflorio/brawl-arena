@@ -21,10 +21,10 @@ export type ClassDefinition = {
 	-- Palette luminance-differentiated (sobrevive deuteranopia/protanopia ~8% pop).
 	-- Não conflita com player slot colors (P1-P4) nem damage gradient.
 	AccentColor: Color3,
-	-- Acessórios diegéticos (clothing) por classe — InsertService:LoadAsset usado server-side
-	-- (ClassAccessoryService). Lista vazia = classe sem accessory; IDs inválidos degradam
-	-- gracioso (pcall + warn). Roblox catalog placeholders por enquanto, swap por arte custom depois.
-	AccessoryAssetIds: { number },
+	-- Note: acessórios diegéticos (luvas/wraps/tutu) são definidos em
+	-- ServerScriptService/Server/Modules/ClassAccessoryDefs.lua, lookup por Class.Id.
+	-- Construídos proceduralmente de Parts primitivos (sem InsertService — evita
+	-- ownership/copyright issues do Roblox catalog).
 }
 
 local Classes = {}

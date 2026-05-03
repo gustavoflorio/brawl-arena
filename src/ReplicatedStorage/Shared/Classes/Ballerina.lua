@@ -75,10 +75,6 @@ local Ballerina = {
 	HeavyKey = "Spin",
 	-- Bright aqua-mint (luminance ~0.82). Mobility/flow read; ≠ player.p2 cyan; ≠ semantic.success.
 	AccentColor = Color3.fromRGB(140, 240, 220),
-	-- Tutu (saia de bailarina) na cintura. Asset ID Roblox catalog placeholder.
-	AccessoryAssetIds = {
-		131538013373614, -- Ballet Skirt Pink Pastel Tulle Tutu Ruff (Waist Accessory)
-	} :: { number },
 }
 
 return Ballerina
