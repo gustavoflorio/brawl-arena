@@ -5,11 +5,11 @@
 -- instances criadas em Studio (vivem em Workspace.BrawlClassAccessories,
 -- editáveis visualmente no editor) — service só clona e parenta.
 --
--- Por que Workspace:
---   ReplicatedStorage seria mais "correto" semanticamente, mas é mais difícil de
---   encontrar/editar no Studio Explorer. Workspace é o painel sempre aberto onde
---   o user vê tudo. Custo: prefabs renderizam no mundo (anchored, longe da arena
---   em Y=50). Trade off: workflow > limpeza de organização.
+-- Por que Workspace.Assets:
+--   Convenção do projeto: TODOS os prefabs/assets do jogo vão em Workspace.Assets
+--   (ver memory note do user). Workspace é o painel sempre aberto no Studio Explorer
+--   onde o user vê tudo, e Assets agrupa pra não poluir o root do Workspace.
+--   Custo: prefabs renderizam no mundo (anchored, longe da arena em Y=50).
 --
 -- Por que não InsertService:LoadAsset (catalog):
 --   Roblox bloqueia LoadAsset de items de creators terceiros (trust policy)
@@ -26,6 +26,7 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Classes = require(sharedFolder:WaitForChild("Classes"))
 
+local ASSETS_FOLDER_NAME = "Assets"
 local PREFABS_FOLDER_NAME = "BrawlClassAccessories"
 
 type Services = { [string]: any }
@@ -43,7 +44,12 @@ ClassAccessoryService._prefabsFolder = nil :: Folder?
 local function getPrefabsFolder(): Folder?
 	-- Lazy lookup: se prefabs não tão lá ainda no Init, espera pacientemente.
 	-- Em produção, prefabs vivem no place file (Studio editor save), não no Rojo.
-	return Workspace:FindFirstChild(PREFABS_FOLDER_NAME) :: Folder?
+	-- Convention: Workspace.Assets é a folder raiz pra TODOS os prefabs do jogo.
+	local assets = Workspace:FindFirstChild(ASSETS_FOLDER_NAME)
+	if not assets then
+		return nil
+	end
+	return assets:FindFirstChild(PREFABS_FOLDER_NAME) :: Folder?
 end
 
 local function removeClassAccessories(character: Model)
@@ -88,9 +94,9 @@ function ClassAccessoryService:Init(services: Services)
 	self._prefabsFolder = getPrefabsFolder()
 	if not self._prefabsFolder then
 		warn(string.format(
-			"[ClassAccessoryService] %s folder not found in Workspace. " ..
+			"[ClassAccessoryService] %s folder not found in Workspace.%s. " ..
 			"Accessories won't be applied. Verifica que os prefabs foram salvos no place.",
-			PREFABS_FOLDER_NAME
+			PREFABS_FOLDER_NAME, ASSETS_FOLDER_NAME
 		))
 	end
 end
