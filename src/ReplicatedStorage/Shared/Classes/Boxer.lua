@@ -19,9 +19,12 @@ local Boxer = {
 	HeavyKey = "Heavy",
 	-- Burnished gold (mid luminance ~0.65). Reads as "default/grounded/heavy".
 	AccentColor = Color3.fromRGB(220, 180, 90),
-	-- Boxing gloves nas mãos. Asset IDs Roblox catalog placeholder — swap por arte custom.
-	-- TODO: substituir por IDs reais do catalog Roblox (free boxing gloves accessory).
-	AccessoryAssetIds = {} :: { number },
+	-- Boxing gloves nas mãos. Asset IDs Roblox catalog placeholder por 'Turesa
+	-- (luvas pareadas L+R, Shoulder attachments). Swap por arte custom depois.
+	AccessoryAssetIds = {
+		107859381954122, -- [R6] Left Boxing Glove
+		97239457897224,  -- [R6] Right Boxing Glove
+	} :: { number },
 }
 
 return Boxer
