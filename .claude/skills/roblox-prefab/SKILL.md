@@ -156,6 +156,35 @@ end
 - Iconic shapes: red boxing glove (165,35,35), white wrap (230,220,195), pink tutu (255,200,220).
 - Don't make accessory color same as class accent — let outline carry the class color (surface decoupling rule, see DESIGN.md).
 
+**Showcase line (3D world position)**:
+
+Prefabs também precisam de coordenadas 3D razoáveis. **NÃO deixe em (0,0,0)** — fica em cima do spawn pad e o user perde tempo procurando. **Convenção do projeto**: alinhar todos os prefabs em fila Y=50, Z=0, X variando a cada 4-5 studs, próximos aos prefabs já existentes da família (`BrawlClassAccessories`).
+
+Antes de buildar, probe a posição dos prefabs existentes:
+
+```lua
+for _, accessory in ipairs(parentFolder:GetDescendants()) do
+  if accessory:IsA("Accessory") then
+    local h = accessory:FindFirstChild("Handle")
+    if h then print(accessory:GetFullName(), h.Position) end
+  end
+end
+```
+
+Posiciona os novos numa continuação dessa linha. Mover toda a Accessory (Handle + decoratives) preserva offsets relativos via delta translation:
+
+```lua
+local function moveAccessory(accessory, newHandlePos)
+  local handle = accessory:FindFirstChild("Handle")
+  local delta = newHandlePos - handle.Position
+  for _, p in ipairs(accessory:GetDescendants()) do
+    if p:IsA("BasePart") then p.Position = p.Position + delta end
+  end
+end
+```
+
+**Test dummy também posiciona perto** dos prefabs (e.g. Z=5 à frente da showcase line) — não no (0, 5, 0).
+
 ### Phase 3: Visual validation via test dummies
 
 Spawn 1+ R15 dummy in **`Workspace.Assets._TestRigs`** (NEVER at Workspace root — pollutes the user's Explorer view), equip the prefabs, ask user to look in Studio.
