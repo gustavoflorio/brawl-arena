@@ -534,7 +534,23 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	-- multiplicador do move. Jab1 empurra pouco (0.55x); jab3/heavy finalizam (1.35-1.5x).
 	local speed = Constants.Combat.KnockbackBase * (1 + (damagePercent / 100) * Constants.Combat.KnockbackGrowth)
 		* move.KnockbackMult
-	local kbVelocity = facing * speed + Vector3.new(0, Constants.Combat.KnockbackVertical, 0)
+
+	-- Direção lateral do KB: SEMPRE do atacante PARA o alvo (alvo voa pra
+	-- longe do atacante). Antes usava `facing` do atacante, mas em hits de
+	-- close-radius (sphere omnidirecional do hitbox) o alvo pode estar
+	-- atrás do atacante — KB no facing acabava jogando o alvo CONTRA o
+	-- atacante, e o PlayerHitbox volumétrico bloqueava o movimento (alvo
+	-- ficava preso, não voava). Vector deltaX puncher→target garante push
+	-- sempre lateral oposto ao atacante. Stack vertical (mesmo X) cai pro
+	-- facing do atacante como fallback.
+	local deltaX = targetRoot.Position.X - punchRoot.Position.X
+	local kbDirX: number
+	if math.abs(deltaX) > 0.1 then
+		kbDirX = if deltaX > 0 then 1 else -1
+	else
+		kbDirX = facing.X
+	end
+	local kbVelocity = Vector3.new(kbDirX * speed, Constants.Combat.KnockbackVertical, 0)
 
 	-- S1: hitstop escalado por damage% acumulado do alvo. Light em alvo fresco
 	-- ≈ 100ms (acima do limiar perceptual de impacto); heavy em alvo perto do
