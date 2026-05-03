@@ -318,14 +318,18 @@ function CombatService:_findTargets(
 	return results
 end
 
-local function bumpSeqAttribute(character: Model, attrName: string)
-	local current = character:GetAttribute(attrName)
-	local nextVal = (typeof(current) == "number" and current or 0) + 1
-	-- Profiling: stampa server time ANTES do bump pra que o stamp e o seq
-	-- replique no mesmo network frame. Cliente lê o stamp no listener e
-	-- computa delta_ms = chegada - envio.
-	Profiling.StampSeq(character, attrName)
-	character:SetAttribute(attrName, nextVal)
+local function firePulse(eventType: string, character: Model, payload: { [string]: any }?)
+	-- Combat events vão por RemoteEvent unificado em vez de seq bumps em
+	-- attributes. RemoteEvent dispara imediato (sem batching de ~100ms da
+	-- replication queue de attributes), então hits/anims/KB respondem mais
+	-- rápido client-side. FireAllClients porque Hit precisa propagar VFX/sound
+	-- pra todos os clientes; outros events (HitStop, KB, Elim) são filtrados
+	-- client-side por character == localPlayer.Character.
+	local remote = Remotes.GetCombatPulseRemote()
+	if not remote then
+		return
+	end
+	remote:FireAllClients(eventType, character, payload or {})
 end
 
 local function applyHitStop(character: Model, duration: number)
@@ -342,7 +346,7 @@ local function applyHitStop(character: Model, duration: number)
 		target = current
 	end
 	character:SetAttribute(Constants.CharacterAttributes.HitStopUntil, target)
-	bumpSeqAttribute(character, Constants.CharacterAttributes.HitStopSeq)
+	firePulse(Constants.CombatPulseTypes.HitStop, character, { until_ = target })
 end
 
 function CombatService:_applyDI(kbVelocity: Vector3, inputX: number): Vector3
@@ -409,7 +413,8 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 		endsAt = Workspace:GetServerTimeNow() + trapDuration,
 	}
 
-	targetCharacter:SetAttribute(Constants.CharacterAttributes.HitKind, move.HitKind)
+	-- HitKind agora viaja na payload do Hit pulse (cada tick); LastHitterId/Time
+	-- ficam em attribute pra kill attribution server-side.
 	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
 	targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
 	applyHitStop(targetCharacter, trapDuration)
@@ -429,7 +434,10 @@ function CombatService:_applyTrapHit(puncher: Player, target: Player, move: Move
 				return
 			end
 			arenaService:AddDamage(target, damagePerTick)
-			bumpSeqAttribute(targetCharacter, Constants.CharacterAttributes.HitSeq)
+			firePulse(Constants.CombatPulseTypes.Hit, targetCharacter, {
+				hitKind = move.HitKind,
+				damagePercent = arenaService:GetDamage(target),
+			})
 			arenaService:PublishState(target)
 		end)
 	end
@@ -472,10 +480,12 @@ function CombatService:_cancelTrap(puncher: Player)
 	local now = Workspace:GetServerTimeNow()
 	local current = victimChar:GetAttribute(Constants.CharacterAttributes.HitStopUntil)
 	if typeof(current) == "number" and current > now then
-		-- Set HitStopUntil pro presente; HitStopSeq bump dispara o listener
-		-- do client com remaining<=0 → MovementController:EndHitStopLock.
+		-- HitStopUntil ainda é state (lido por InputController.isHitStopped),
+		-- mas o sinal de "release agora" vai por pulso explícito —
+		-- HitStopRelease dispara EndHitStopLock no cliente sem precisar de
+		-- listener no attribute.
 		victimChar:SetAttribute(Constants.CharacterAttributes.HitStopUntil, now)
-		bumpSeqAttribute(victimChar, Constants.CharacterAttributes.HitStopSeq)
+		firePulse(Constants.CombatPulseTypes.HitStopRelease, victimChar, {})
 	end
 end
 
@@ -540,12 +550,15 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 	local puncherCharacter = puncher.Character
 
 	if targetCharacter then
-		-- HitKind antes de incrementar HitSeq: client lê kind atomicamente
-		-- junto com o trigger (mesmo frame).
-		targetCharacter:SetAttribute(Constants.CharacterAttributes.HitKind, move.HitKind)
-		bumpSeqAttribute(targetCharacter, Constants.CharacterAttributes.HitSeq)
+		-- LastHitterId/Time são server-state pra kill attribution; ficam como
+		-- attribute. HitKind e damage% vão direto na payload do pulso (sem
+		-- precisar de attribute pro cliente ler — recebe no evento).
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitterId, puncher.UserId)
 		targetCharacter:SetAttribute(Constants.CharacterAttributes.LastHitTime, os.clock())
+		firePulse(Constants.CombatPulseTypes.Hit, targetCharacter, {
+			hitKind = move.HitKind,
+			damagePercent = damagePercent,
+		})
 
 		applyHitStop(targetCharacter, targetHitStop)
 
@@ -555,8 +568,6 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 		-- durante hitlag; no Roblox simulamos atrasando a velocity.
 		-- DI é lida APENAS no momento da aplicação (depois do hitstop), dando
 		-- ao cliente do target a janela inteira pra mandar updates de input.
-		local kbAttr = Constants.CharacterAttributes.KBVelocity
-		local kbSeqAttr = Constants.CharacterAttributes.KBSeq
 		task.delay(targetHitStop, function()
 			local current = target.Character
 			if current ~= targetCharacter or not current.Parent then
@@ -567,8 +578,9 @@ function CombatService:_applyHit(puncher: Player, target: Player, facing: Vector
 			if diEntry and os.clock() - diEntry.setAt < Constants.DI.FreshnessSeconds then
 				finalKB = self:_applyDI(kbVelocity, diEntry.inputX)
 			end
-			current:SetAttribute(kbAttr, finalKB)
-			bumpSeqAttribute(current, kbSeqAttr)
+			firePulse(Constants.CombatPulseTypes.Knockback, current, {
+				velocity = finalKB,
+			})
 		end)
 	end
 

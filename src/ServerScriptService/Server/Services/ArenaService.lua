@@ -8,7 +8,6 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
-local Profiling = require(sharedFolder:WaitForChild("Profiling"))
 
 type Services = { [string]: any }
 
@@ -308,10 +307,13 @@ function ArenaService:ReturnToLobby(player: Player, reason: string?)
 
 	if wasInArena and reason == "OutOfBounds" then
 		if character then
-			local current = character:GetAttribute(Constants.CharacterAttributes.EliminationSeq)
-			local nextSeq = (typeof(current) == "number" and current or 0) + 1
-			Profiling.StampSeq(character, Constants.CharacterAttributes.EliminationSeq)
-			character:SetAttribute(Constants.CharacterAttributes.EliminationSeq, nextSeq)
+			-- Pulso de eliminação: cliente toca SFX no recipiente. Antes era
+			-- bump de EliminationSeq atributo; agora vai por RemoteEvent
+			-- direto (sem batching de attribute replication).
+			local pulseRemote = Remotes.GetCombatPulseRemote()
+			if pulseRemote then
+				pulseRemote:FireAllClients(Constants.CombatPulseTypes.Elimination, character, {})
+			end
 		end
 		if services and services.AnalyticsService then
 			services.AnalyticsService:Log(Constants.Analytics.Events.ReturnToLobby, {

@@ -28,6 +28,7 @@ local Workspace = game:GetService("Workspace")
 local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Classes = require(sharedFolder:WaitForChild("Classes"))
+local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -35,7 +36,6 @@ local CLASS_ID_ATTR = Constants.CharacterAttributes.ClassId
 local ARENA_ACTIVE_ATTR = Constants.CharacterAttributes.ArenaActive
 local INVUL_ATTR = Constants.CharacterAttributes.InvincibleUntil
 local HITSTOP_UNTIL_ATTR = Constants.CharacterAttributes.HitStopUntil
-local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
 
 local HIGHLIGHT_NAME = "BrawlClassOutline"
 local OUTLINE_THICKNESS = 4
@@ -64,7 +64,6 @@ type CharacterBinding = {
 	heartbeatConn: RBXScriptConnection?,
 	heavyExpiresAt: number,
 	koActiveUntil: number,
-	lastElimSeq: number,
 	phaseOffset: number,
 	isLocal: boolean,
 }
@@ -240,7 +239,6 @@ function ClassOutlineController:_bindCharacter(player: Player, character: Model)
 		heartbeatConn = nil,
 		heavyExpiresAt = 0,
 		koActiveUntil = 0,
-		lastElimSeq = character:GetAttribute(ELIM_SEQ_ATTR) :: number? or 0,
 		-- Phase offset: 0..1 segundos espalhados pelos UserIds dos players.
 		-- 8 = max esperado de players por server; granularidade fina suficiente.
 		phaseOffset = (player.UserId % 8) / 8,
@@ -259,16 +257,9 @@ function ClassOutlineController:_bindCharacter(player: Player, character: Model)
 		table.insert(binding.conns, character:GetAttributeChangedSignal(attr):Connect(onChange))
 	end
 
-	-- ElimSeq: increment significa KO. Compara com lastElimSeq pra evitar
-	-- triggar pulse na primeira leitura (que pode pegar o seq de char anterior).
-	table.insert(binding.conns, character:GetAttributeChangedSignal(ELIM_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(ELIM_SEQ_ATTR)
-		if typeof(seq) == "number" and seq > binding.lastElimSeq then
-			binding.lastElimSeq = seq
-			binding.koActiveUntil = os.clock() + KO_PULSE_DURATION
-			ensureHeartbeat(binding)
-		end
-	end))
+	-- KO pulse trigger vem via Constants.CombatPulseTypes.Elimination remote
+	-- (subscrito em Start). Antes era ELIM_SEQ attribute change; agora unificado
+	-- com o resto dos pulsos de combat pra responder mais rápido.
 
 	self._bindings[player] = binding
 	applyState(binding)
@@ -325,6 +316,27 @@ function ClassOutlineController:Start()
 			self._bindings[player] = nil
 		end
 	end)
+
+	-- Combat pulse: escuta só Elimination pra disparar KO pulse no outline.
+	-- Outros eventos (Hit/HitStop/KB) são tratados em CombatFxController.
+	local pulseRemote = Remotes.GetCombatPulseRemote()
+	if pulseRemote then
+		pulseRemote.OnClientEvent:Connect(function(eventType: any, character: any, _payload: any)
+			if eventType ~= Constants.CombatPulseTypes.Elimination then
+				return
+			end
+			if typeof(character) ~= "Instance" or not character:IsA("Model") then
+				return
+			end
+			for _, binding in pairs(self._bindings) do
+				if binding.character == character then
+					binding.koActiveUntil = os.clock() + KO_PULSE_DURATION
+					ensureHeartbeat(binding)
+					break
+				end
+			end
+		end)
+	end
 end
 
 return ClassOutlineController

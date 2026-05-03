@@ -70,4 +70,8 @@ function Remotes.GetDevRemote(): RemoteFunction?
 	return getRemoteFunction(Constants.Remotes.Dev)
 end
 
+function Remotes.GetCombatPulseRemote(): RemoteEvent?
+	return getRemote(Constants.Remotes.CombatPulse)
+end
+
 return Remotes

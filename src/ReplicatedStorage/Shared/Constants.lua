@@ -9,6 +9,19 @@ local Constants = {
 		Arena = "BrawlArenaState",
 		Shop = "BrawlShop",
 		Dev = "BrawlDev",
+		-- Combat pulse: Hit/HitStop/Knockback/Elimination/HitStopRelease
+		-- como RemoteEvent unificado em vez de attribute seq bumps. Replication
+		-- de RemoteEvent é direta (sem batching de ~100ms dos attributes), então
+		-- hits/anims/KB respondem mais rápido client-side.
+		CombatPulse = "BrawlCombatPulse",
+	},
+	-- Tipos de evento do CombatPulse remote.
+	CombatPulseTypes = {
+		Hit = "Hit",
+		HitStop = "HitStop",
+		HitStopRelease = "HitStopRelease",
+		Knockback = "Knockback",
+		Elimination = "Elimination",
 	},
 	Actions = {
 		Punch = "Punch",
@@ -166,7 +179,14 @@ local Constants = {
 	-- *viu* ao atacar, não a posição atualizada depois que o request viajou.
 	LagComp = {
 		SnapshotHistorySeconds = 0.5,  -- quanto passado guardamos (30 snaps @ 60Hz)
-		MaxRewindSeconds = 0.25,       -- rewind máximo aceito (anti-abuse)
+		-- Rewind máximo aceito. Subido de 0.25 → 0.35 pra cobrir spikes
+		-- ocasionais de ~244-261ms vistos no profiling. Sem essa folga, hits
+		-- nesses frames são clampados pra 0.25s no passado, aplicando hitbox
+		-- contra posição já desatualizada do alvo (puncher vê alvo lá, server
+		-- vê alvo aqui — hit "ghosta"). Trade-off: ~100ms a mais de janela
+		-- onde cliente pode falsificar timestamp pra ganhar vantagem (anti-
+		-- cheat fica mais frouxo, aceitável dado que não há ranqueado caro).
+		MaxRewindSeconds = 0.35,
 	},
 	-- Directional Influence (B2): input horizontal do alvo durante hitstop
 	-- deflete o vetor de knockback. Se segura direção oposta ao KB, deflete
@@ -200,7 +220,7 @@ local Constants = {
 	-- replicação na chegada e printa. Habilitar SOMENTE em testing — em
 	-- produção gera ~30 prints/s por player + 1 attribute extra por evento.
 	Profiling = {
-		Enabled = true,
+		Enabled = false,
 		-- Per-category toggles: false = silencia essa categoria. Útil pra
 		-- isolar (e.g., desligar StateReplication enquanto debuga InputLatency).
 		StateReplication = true,

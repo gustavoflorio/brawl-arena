@@ -9,17 +9,12 @@ local sharedFolder = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(sharedFolder:WaitForChild("Constants"))
 local Remotes = require(sharedFolder:WaitForChild("Net"):WaitForChild("Remotes"))
 local Classes = require(sharedFolder:WaitForChild("Classes"))
-local Profiling = require(sharedFolder:WaitForChild("Profiling"))
 
 local localPlayer = Players.LocalPlayer
 
-local HIT_SEQ_ATTR = Constants.CharacterAttributes.HitSeq
-local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
-local KB_SEQ_ATTR = Constants.CharacterAttributes.KBSeq
-local KB_VEL_ATTR = Constants.CharacterAttributes.KBVelocity
-local HIT_KIND_ATTR = Constants.CharacterAttributes.HitKind
-local DAMAGE_PERCENT_ATTR = Constants.CharacterAttributes.DamagePercent
-local HITSTOP_SEQ_ATTR = Constants.CharacterAttributes.HitStopSeq
+-- HitStopUntil ainda é attribute (lido por _playHitReactionOn pra freezar
+-- a anim de impacto no frame 0 enquanto hitstop ativo). Demais sinais de
+-- combat (HitSeq, KBSeq etc.) viraram pulsos via CombatPulse remote.
 local HITSTOP_UNTIL_ATTR = Constants.CharacterAttributes.HitStopUntil
 local DOUBLE_JUMP_DURATION = 0.6
 local VFX_IMPACT_DURATION = 0.6
@@ -478,40 +473,6 @@ local function playEliminationSound()
 	end)
 end
 
-local function bindHitListener(character: Model)
-	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
-	end
-	character:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(HIT_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
-		local root = character:FindFirstChild("HumanoidRootPart")
-		if root and root:IsA("BasePart") then
-			playHitSoundAt(root)
-		end
-	end)
-end
-
-local function bindEliminationListener(character: Model)
-	local lastSeen = character:GetAttribute(ELIM_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
-	end
-	character:GetAttributeChangedSignal(ELIM_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(ELIM_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
-		Profiling.LogSeqArrival(character, ELIM_SEQ_ATTR, seq, "Elimination")
-		playEliminationSound()
-	end)
-end
-
 local function sendDIInput(character: Model)
 	-- B2: envia input horizontal atual ao server. Chamada ao entrar em hitstop
 	-- e sempre que MoveDirection mudar durante. Server usa o último valor
@@ -526,122 +487,6 @@ local function sendDIInput(character: Model)
 		return
 	end
 	remote:FireServer(Constants.Actions.DI, { inputX = inputX })
-end
-
-local function bindHitStopListener(character: Model, fxController: any)
-	-- Só roda pro próprio character. Congela combat anims via AdjustSpeed(0),
-	-- delega walkspeed lock ao MovementController (mesma pattern do PunchLock),
-	-- e transmite DI input ao server pra modular o knockback (B2).
-	local lastSeen = character:GetAttribute(HITSTOP_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
-	end
-	character:GetAttributeChangedSignal(HITSTOP_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(HITSTOP_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
-		Profiling.LogSeqArrival(character, HITSTOP_SEQ_ATTR, seq, "HitStop")
-		local until_ = character:GetAttribute(HITSTOP_UNTIL_ATTR)
-		if typeof(until_) ~= "number" then
-			return
-		end
-		-- HITSTOP_UNTIL_ATTR é server time (Workspace:GetServerTimeNow). Usar
-		-- os.clock() aqui dessincroniza do servidor e congela o char por
-		-- segundos a fio (gap server-uptime vs. client-uptime).
-		local remaining = until_ - Workspace:GetServerTimeNow()
-		if remaining <= 0 then
-			-- Server liberou o hitstop cedo (e.g., trap cancelada — puncher
-			-- foi interrompido e o victim deve sair do lockup imediatamente).
-			-- Sem isso, MovementController seguraria walkspeed=0 até o
-			-- deadline original.
-			local mc = fxController._controllers and fxController._controllers.MovementController
-			if mc and type(mc.EndHitStopLock) == "function" then
-				mc:EndHitStopLock()
-			end
-			return
-		end
-
-		-- Delega walkspeed ao MovementController (ele já sabe save/restore
-		-- e coexistir com PunchLock ativo).
-		local movementController = fxController._controllers and fxController._controllers.MovementController
-		if movementController and type(movementController.StartHitStopLock) == "function" then
-			movementController:StartHitStopLock(remaining)
-		end
-
-		-- DI: snapshot do input no momento do hit, plus monitor de mudanças
-		-- durante o hitstop inteiro. Server armazena o último valor recebido.
-		sendDIInput(character)
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		local diConn: RBXScriptConnection? = nil
-		if humanoid then
-			local lastSentX = humanoid.MoveDirection.X
-			diConn = humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
-				if not humanoid.Parent then
-					return
-				end
-				local currX = humanoid.MoveDirection.X
-				-- Só manda se mudou significativamente (anti-jitter do joystick).
-				if math.abs(currX - lastSentX) > 0.2 then
-					lastSentX = currX
-					sendDIInput(character)
-				end
-			end)
-		end
-
-		-- Congela combat anim tracks em curso. Só tracks de jab/heavy:
-		-- running/jump loopam normalmente (se target estava parado socando
-		-- quando foi hit, a anim de punch freeza no meio).
-		local pausedTracks: { { track: AnimationTrack, prevSpeed: number } } = {}
-		for _, kind in ipairs(COMBAT_TRACKS) do
-			local track = fxController._tracks[kind]
-			if track and track.IsPlaying then
-				table.insert(pausedTracks, { track = track, prevSpeed = track.Speed })
-				track:AdjustSpeed(0)
-			end
-		end
-		task.delay(remaining, function()
-			if diConn then
-				diConn:Disconnect()
-			end
-			for _, entry in ipairs(pausedTracks) do
-				if entry.track.IsPlaying then
-					entry.track:AdjustSpeed(entry.prevSpeed > 0 and entry.prevSpeed or 1)
-				end
-			end
-		end)
-	end)
-end
-
-local function bindKnockbackListener(character: Model)
-	-- Só roda pro próprio character do local player — ele tem physics ownership
-	-- e é o único que consegue aplicar velocity que replica corretamente.
-	local lastSeen = character:GetAttribute(KB_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
-	end
-	character:GetAttributeChangedSignal(KB_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(KB_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
-		Profiling.LogSeqArrival(character, KB_SEQ_ATTR, seq, "Knockback")
-		local velocity = character:GetAttribute(KB_VEL_ATTR)
-		if typeof(velocity) ~= "Vector3" then
-			return
-		end
-		local root = character:FindFirstChild("HumanoidRootPart")
-		if not root or not root:IsA("BasePart") then
-			return
-		end
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-		end
-		root.AssemblyLinearVelocity = velocity
-	end)
 end
 
 -- ====== Punch VFX cloning ======
@@ -705,75 +550,147 @@ local function playTrailVFX(character: Model, isHeavy: boolean, damagePercent: n
 	end)
 end
 
--- Hit listener com VFX: extende o sound-only da versão anterior.
-local function bindHitVFXListener(character: Model)
-	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
-	end
-	character:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(HIT_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
-		-- Profiling: log uma vez por bump (este listener roda pra TODOS os
-		-- chars no client, então captura a perspectiva de cada client sobre
-		-- replicação de hits — incluindo quando alguém vê outro player ser
-		-- hitado vs ser hitado ele mesmo).
-		Profiling.LogSeqArrival(character, HIT_SEQ_ATTR, seq, "Hit")
-		local kind = character:GetAttribute(HIT_KIND_ATTR)
-		local isHeavy = kind == "Heavy"
-		local dmgAttr = character:GetAttribute(DAMAGE_PERCENT_ATTR)
-		local damagePercent = typeof(dmgAttr) == "number" and dmgAttr or 0
-		playImpactVFX(character)
-		playTrailVFX(character, isHeavy, damagePercent)
-	end)
-end
+-- ===== Combat pulse handlers =====
+--
+-- Server emite RemoteEvent unificado (Hit/HitStop/HitStopRelease/Knockback/
+-- Elimination) em vez de atributos seq + GetAttributeChangedSignal. Replication
+-- de RemoteEvent é direta (sem batching), então VFX/sound/anim respondem mais
+-- rápido client-side. Cada handler filtra por character == localPlayer.Character
+-- quando o efeito é exclusivo do dono.
 
--- Hit reaction animation listener: toca uma anim aleatória do pool quando
--- char é atingido. Separado do VFX listener pra que a anim possa ser
--- desabilitada sem mexer nos outros efeitos se necessário. Bind também faz
--- cancel do swing local (semântica "tomou hit = para de atacar") — server
--- já cancela do lado dele em CombatService:_cancelTargetSwing, este listener
--- replica o efeito client-side pra que anim/lunge/combo state parem na hora.
-local function bindHitReactionListener(character: Model, fxController: any)
-	local lastSeen = character:GetAttribute(HIT_SEQ_ATTR)
-	if typeof(lastSeen) ~= "number" then
-		lastSeen = 0
+local function handleHitPulse(character: Model, payload: any, fxController: any)
+	-- Hit dispara em TODOS os clientes pra cada char hitado: sound + VFX
+	-- são visuais broadcast. Hit reaction + cancel swing são exclusivos
+	-- do dono do char (anim local replica naturalmente via Animator).
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		playHitSoundAt(root)
 	end
-	character:GetAttributeChangedSignal(HIT_SEQ_ATTR):Connect(function()
-		local seq = character:GetAttribute(HIT_SEQ_ATTR)
-		if typeof(seq) ~= "number" or seq <= lastSeen then
-			return
-		end
-		lastSeen = seq
+	local kind = typeof(payload) == "table" and payload.hitKind or nil
+	local isHeavy = kind == "Heavy"
+	local dmg = typeof(payload) == "table" and typeof(payload.damagePercent) == "number"
+		and payload.damagePercent or 0
+	playImpactVFX(character)
+	playTrailVFX(character, isHeavy, dmg)
+	if character == localPlayer.Character then
 		fxController:_playHitReactionOn(character)
 		fxController:_cancelLocalSwingOnHit()
+	end
+end
+
+local function handleHitStopPulse(character: Model, payload: any, fxController: any)
+	-- HitStop só matters pro dono do char: locka walkspeed + congela anim
+	-- + abre janela de DI input. Outros clientes ignoram.
+	if character ~= localPlayer.Character then
+		return
+	end
+	local until_ = typeof(payload) == "table" and payload.until_ or nil
+	if typeof(until_) ~= "number" then
+		return
+	end
+	local remaining = until_ - Workspace:GetServerTimeNow()
+	if remaining <= 0 then
+		return
+	end
+
+	local mc = fxController._controllers and fxController._controllers.MovementController
+	if mc and type(mc.StartHitStopLock) == "function" then
+		mc:StartHitStopLock(remaining)
+	end
+
+	-- DI: snapshot inicial + monitor de mudanças durante o hitstop. Server
+	-- usa o último valor recebido na hora de aplicar o KB.
+	sendDIInput(character)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local diConn: RBXScriptConnection? = nil
+	if humanoid then
+		local lastSentX = humanoid.MoveDirection.X
+		diConn = humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+			if not humanoid.Parent then
+				return
+			end
+			local currX = humanoid.MoveDirection.X
+			if math.abs(currX - lastSentX) > 0.2 then
+				lastSentX = currX
+				sendDIInput(character)
+			end
+		end)
+	end
+
+	-- Pausa combat tracks em curso (jab/heavy). Running/jump loopam normalmente
+	-- — se target estava parado socando, anim de soco freeza no meio.
+	local pausedTracks: { { track: AnimationTrack, prevSpeed: number } } = {}
+	for _, kind in ipairs(COMBAT_TRACKS) do
+		local track = fxController._tracks[kind]
+		if track and track.IsPlaying then
+			table.insert(pausedTracks, { track = track, prevSpeed = track.Speed })
+			track:AdjustSpeed(0)
+		end
+	end
+	task.delay(remaining, function()
+		if diConn then
+			diConn:Disconnect()
+		end
+		for _, entry in ipairs(pausedTracks) do
+			if entry.track.IsPlaying then
+				entry.track:AdjustSpeed(entry.prevSpeed > 0 and entry.prevSpeed or 1)
+			end
+		end
 	end)
 end
 
-local function bindPlayer(player: Player, fxController: any)
+local function handleHitStopReleasePulse(character: Model, _payload: any, fxController: any)
+	-- Server liberou o hitstop cedo (e.g., trap cancelada — puncher foi
+	-- interrompido e o victim sai do lockup imediato). Sem isso,
+	-- MovementController seguraria walkspeed=0 até o deadline original.
+	if character ~= localPlayer.Character then
+		return
+	end
+	local mc = fxController._controllers and fxController._controllers.MovementController
+	if mc and type(mc.EndHitStopLock) == "function" then
+		mc:EndHitStopLock()
+	end
+end
+
+local function handleKnockbackPulse(character: Model, payload: any, _fxController: any)
+	-- KB só roda no dono do char — só ele tem physics ownership pra aplicar
+	-- velocity que replica corretamente.
+	if character ~= localPlayer.Character then
+		return
+	end
+	local velocity = typeof(payload) == "table" and payload.velocity or nil
+	if typeof(velocity) ~= "Vector3" then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+	end
+	root.AssemblyLinearVelocity = velocity
+end
+
+local function handleEliminationPulse(character: Model, _payload: any, _fxController: any)
+	-- Elim sound só pro dono do char eliminado.
+	if character ~= localPlayer.Character then
+		return
+	end
+	playEliminationSound()
+end
+
+local function bindLocalCharacter(player: Player, fxController: any)
+	-- Único bind agora: pré-carrega hit reaction tracks no Animator do local
+	-- char (LoadAnimation em Animator remoto corrompe o engine — só o dono
+	-- pode tocar). Anim replica naturalmente pros outros clients via Animator.
+	if player ~= localPlayer then
+		return
+	end
 	local function onCharacter(character: Model)
-		bindHitListener(character)
-		bindHitVFXListener(character)
-		if player == localPlayer then
-			-- Hit reaction SOMENTE no local player: LoadAnimation em Animator
-			-- remoto (char que não pertence ao cliente) dispara o erro
-			-- "AnimationRig::transformReflectedTypeGenericCallback encountered
-			-- unsupported version" e corrompe o Animator — char para de
-			-- animar de vez. Tocando no local player, a ownership do Animator
-			-- está correta e a anim replica naturalmente pros outros clientes.
-			fxController:ResetCharacterTracks()
-			-- Pré-carrega os tracks de hit reaction UMA VEZ por character.
-			-- Reutilizados a cada hit via :Play() — evita o ciclo
-			-- LoadAnimation/Destroy por hit que corrompia o Animator.
-			fxController:_prepareHitReactionTracks(character)
-			bindHitReactionListener(character, fxController)
-			bindEliminationListener(character)
-			bindKnockbackListener(character)
-			bindHitStopListener(character, fxController)
-		end
+		fxController:ResetCharacterTracks()
+		fxController:_prepareHitReactionTracks(character)
 	end
 	if player.Character then
 		onCharacter(player.Character)
@@ -819,12 +736,42 @@ function CombatFxController:Start()
 		end
 	end)
 
+	-- Hit reaction tracks: pré-carregados no Animator do local char na hora
+	-- que ele spawna. Não-locais não precisam — anim replica via Animator.
 	for _, player in ipairs(Players:GetPlayers()) do
-		bindPlayer(player, self)
+		bindLocalCharacter(player, self)
 	end
 	Players.PlayerAdded:Connect(function(player)
-		bindPlayer(player, self)
+		bindLocalCharacter(player, self)
 	end)
+
+	-- Combat pulse: dispatcher único pra Hit/HitStop/HitStopRelease/Knockback/
+	-- Elimination. Substitui os 6 attribute listeners anteriores. Filtragem
+	-- por character == localPlayer.Character acontece dentro de cada handler.
+	local pulseRemote = Remotes.GetCombatPulseRemote()
+	if pulseRemote then
+		pulseRemote.OnClientEvent:Connect(function(eventType: any, character: any, payload: any)
+			if typeof(eventType) ~= "string" then
+				return
+			end
+			if typeof(character) ~= "Instance" or not character:IsA("Model") or not character.Parent then
+				return
+			end
+			if eventType == Constants.CombatPulseTypes.Hit then
+				handleHitPulse(character, payload, self)
+			elseif eventType == Constants.CombatPulseTypes.HitStop then
+				handleHitStopPulse(character, payload, self)
+			elseif eventType == Constants.CombatPulseTypes.HitStopRelease then
+				handleHitStopReleasePulse(character, payload, self)
+			elseif eventType == Constants.CombatPulseTypes.Knockback then
+				handleKnockbackPulse(character, payload, self)
+			elseif eventType == Constants.CombatPulseTypes.Elimination then
+				handleEliminationPulse(character, payload, self)
+			end
+		end)
+	else
+		warn("[CombatFxController] CombatPulse remote não encontrado.")
+	end
 end
 
 return CombatFxController

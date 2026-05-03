@@ -59,6 +59,7 @@ local function ensureRemotes()
 		Constants.Remotes.State,
 		Constants.Remotes.Events,
 		Constants.Remotes.Arena,
+		Constants.Remotes.CombatPulse,
 	}
 	for _, remoteName in ipairs(remoteNames) do
 		if not folder:FindFirstChild(remoteName) then
