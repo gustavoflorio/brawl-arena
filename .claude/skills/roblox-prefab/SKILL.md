@@ -35,9 +35,38 @@ This skill GUARANTEES:
 6. The `Workspace.Assets` folder is created on demand if missing; subdirectories per asset family (e.g. `BrawlClassAccessories/Boxer/`) keep things organized.
 7. The user's saved place persists prefabs across sessions. The skill never relies on Rojo to mount these assets (Rojo only syncs `src/`).
 
+## Quality Tiers — choose realistically
+
+Before building, declare which tier you're targeting. The user pissed off at v1/v2 builds was a tier mismatch — primitive composition was being asked to match catalog-quality, which it physically can't.
+
+**Tier 1 — Primitive composition (Block/Ball/Cylinder + WeldConstraint)**
+- Effort: minutes per accessory.
+- Visual ceiling: looks like Lego. OK for prototypes, jam games, deliberately blocky aesthetic. **Will look amateur next to anything professional.**
+- Limitations: no curved geometry, no UV-mapped textures, no PBR. Color is per-Part flat.
+- Example: what we shipped as v1 + v2 of the Boxer/Taekwon/Ballerina prefabs. User feedback: "muito amador".
+
+**Tier 2 — Catalog mesh reuse (clone MeshPart from `InsertService:LoadAsset`)**
+- Effort: minutes per accessory + 1 catalog research session.
+- Visual ceiling: identical to professional catalog items (uses their actual MeshId + TextureID).
+- Pattern:
+  1. Research catalog API (`https://catalog.roblox.com/v1/search/items/details`) for high-favorited items in your asset family. Filter by creator if you want trust safety: `CreatorName=Roblox` for Roblox-official only, otherwise prefer items ≥ 1k favorites + verified creator badge.
+  2. In Studio (`execute_luau`, target=edit), `InsertService:LoadAsset(<id>)` to load the wrapper Accessory.
+  3. Clone the loaded MeshPart, repurpose as your Accessory's Handle.
+  4. Rename the Attachment if needed (e.g. catalog Front Accessory → rename Attachment to `LeftGripAttachment` for hand-mount).
+- Once loaded into the place file (saved via Ctrl+S), the MeshPart is part of YOUR place file — runtime cloning works without further `LoadAsset` calls or trust checks.
+- **Copyright caveat**: Roblox-official items (creatorName="Roblox") are safest. 3rd-party UGC technically belongs to the original creator; redistributing in a competing game is gray area and could DMCA-risk if the game grows. For brawl-arena, prefer Roblox-official meshes; if using 3rd-party, log the original asset URL as attribution.
+- **Plugin context cannot set `MeshId` directly** — it's `NotAccessible`. The `InsertService:LoadAsset` route is the workaround; the loaded MeshPart already has MeshId baked in.
+
+**Tier 3 — Custom uploaded meshes**
+- Effort: hours-days (Blender modeling + texture painting + Roblox upload).
+- Visual ceiling: anything you can model. Highest quality; fully owned IP.
+- Workflow: outside this skill's scope (3D modeling tools required). After upload, plug new asset IDs into a Tier 2-style flow.
+
+**Recommendation**: When user asks for "professional", they almost always want Tier 2. Don't try to deliver Tier 2-quality with Tier 1 techniques — primitive composition has a hard ceiling that no amount of part-stacking breaks through. Be honest with the user about which tier you're shipping.
+
 ## Phases
 
-### Phase 1: Confirm scope + design
+### Phase 1: Confirm scope + design + tier
 
 Before building anything, lock in:
 - **What asset(s)?** Accessory? Model? MeshPart? List the names (e.g., `BoxerLeftGlove`, `BoxerRightGlove`, `BallerinaTutu`).
@@ -48,6 +77,85 @@ Before building anything, lock in:
 If unclear, ask the user; don't guess. Bad shape/color now means a rebuild later.
 
 ### Phase 2: Build via Studio MCP
+
+Choose path based on declared tier (Phase 1).
+
+#### Tier 2 path — clone catalog MeshPart (RECOMMENDED for "professional")
+
+```lua
+local InsertService = game:GetService("InsertService")
+local Workspace = game:GetService("Workspace")
+
+-- Catalog research: queried via curl beforehand. Pick high-favorite items
+-- from trusted creators. Reference catalog accessories include:
+--   id=4470966858  (White Bow Tutu, by ROBLOX, 209k favs)  → meshId 4470940229
+--   id=17257872770 (Tulle Pink Tutu, 49k favs)             → meshId 17257666533
+--   id=89718847680206 (Bandage Wrap Glove R6, 1k favs)     → meshId 81877682482776
+--   id=7029093651 (Boxing Gloves, 380 favs, by hu2an UGC)  → meshId 7015205963
+-- (Mesh+Texture IDs are referenceable from any place once loaded; they live
+-- on Roblox CDN as public assets.)
+
+local CATALOG_REFS = {
+  Tutu        = 4470966858,
+  WrapGlove   = 89718847680206,
+  BoxingGlove = 7029093651,
+}
+
+-- Load originals into a study folder (one-time per place)
+local study = Workspace.Assets:FindFirstChild("_CatalogStudy")
+if not study then
+  study = Instance.new("Folder")
+  study.Name = "_CatalogStudy"
+  study.Parent = Workspace.Assets
+end
+
+local function ensureLoaded(refName, assetId)
+  local existing = study:FindFirstChild(refName)
+  if existing then return existing end
+  local model = InsertService:LoadAsset(assetId)
+  model.Name = refName
+  model.Parent = study
+  return model
+end
+
+-- Clone the MeshPart from the loaded asset, repurpose as our Accessory's Handle
+local function cloneCatalogToAccessory(refName, attachmentName, scale)
+  local loadedModel = study:FindFirstChild(refName)
+  local origAccessory = loadedModel and loadedModel:FindFirstChildWhichIsA("Accessory")
+  local origHandle = origAccessory and origAccessory:FindFirstChild("Handle")
+  if not origHandle or not origHandle:IsA("MeshPart") then
+    warn("Catalog asset " .. refName .. " has no MeshPart Handle")
+    return nil
+  end
+
+  local accessory = Instance.new("Accessory")
+  accessory.Name = refName .. "_repurposed"
+
+  local handle = origHandle:Clone()
+  handle.Name = "Handle"
+  handle.Anchored = true
+  handle.CanCollide = false
+  handle.CanQuery = false
+  handle.CanTouch = false
+  handle.Massless = true
+  if scale then handle.Size = origHandle.Size * scale end
+  -- Strip original attachments (will rename ours)
+  for _, c in ipairs(handle:GetChildren()) do
+    if c:IsA("Attachment") then c:Destroy() end
+  end
+  handle.Parent = accessory
+
+  local att = Instance.new("Attachment")
+  att.Name = attachmentName
+  att.Parent = handle
+
+  return accessory
+end
+```
+
+Reposition the cloned MeshPart's Attachment offset visually in the editor — catalog accessories were made for specific body parts (e.g. Front Accessory mounted on torso), so when repurposing for a different attachment (LeftGripAttachment), you'll need to nudge offset/scale.
+
+#### Tier 1 path — primitive composition (use only when quality bar is low)
 
 Use a single `execute_luau` call with `target=edit` to construct everything atomically — partial state in `Workspace.Assets` is messier than re-running.
 
@@ -326,6 +434,9 @@ Per the project's auto-commit-and-push rule (`feedback_auto_commit_push.md`), af
 - **DO NOT** ship prefabs with `Anchored=false`. Without anchoring, the user can't position them in the Studio editor — they fall on play, fly off on physics, or shift mid-edit. Anchored=true on the prefab; runtime clone unanchors before AddAccessory.
 - **DO NOT** procedurally rebuild prefabs at runtime from a `Defs.lua` table. Tried that earlier this session — the user explicitly rejected it: "para podermos refinar depois" requires Studio editor visibility. Always: build once via MCP, store as Instances in the place file, clone at runtime.
 - **DO NOT** declare a trigger phrase the user wouldn't actually type. "build prefab via Studio MCP" is dev jargon; "cria um acessório" / "novo prefab" / "build accessory" is real user language.
+- **DO NOT** promise "professional quality" with primitive Parts (Tier 1). Catalog accessories use uploaded MeshParts with UV-textured 3D meshes; primitives top out at "blocky/low-poly" no matter how many Parts you stack. If the user wants pro look, go Tier 2 (catalog mesh reuse) or commission Tier 3.
+- **DO NOT** try to set `MeshPart.MeshId` directly via plugin `execute_luau`. It's `NotAccessible` (capability blocked). Use `InsertService:LoadAsset(<id>)` to load the wrapper Accessory; the loaded MeshPart already has MeshId baked in. Clone that MeshPart into your own Accessory.
+- **DO NOT** ship 3rd-party UGC meshes in production without thinking about copyright. Roblox-official items (`creatorName="Roblox"`) are safest. UGC creators technically own their meshes — gray area to redistribute via your experience. For brawl-arena: prefer ROBLOX-official meshes; if using UGC, attribute the original asset URL in code comments.
 - **DO NOT** ship a prefab with a Part that has no `WeldConstraint` to Handle. When `Humanoid:AddAccessory` runs, only the Handle gets welded to the body's matching Attachment. Other Parts (siblings of Handle inside the Accessory, OR children of Handle) need their own `WeldConstraint(Part0=Handle, Part1=otherPart)` to follow the Handle to the character. Without it, the Part stays at the prefab's world position (e.g. Y=50 floating in the air where Workspace.Assets lives) — invisible at the player's character location, totally confusing for the user during playtest. **When the user adds a Part to the prefab manually in the Studio editor, proactively check whether it has a weld to Handle. If not, add one.**
 
 ## Editor refinement workflow (when user edits a prefab manually)
