@@ -38,15 +38,17 @@ local HITSTOP_UNTIL_ATTR = Constants.CharacterAttributes.HitStopUntil
 local ELIM_SEQ_ATTR = Constants.CharacterAttributes.EliminationSeq
 
 local HIGHLIGHT_NAME = "BrawlClassOutline"
-local OUTLINE_THICKNESS = 3
+local OUTLINE_THICKNESS = 4
 
 -- Transparency targets por estado. Quanto maior, mais sutil; 1.0 = invisível.
--- LocalPlayer offset: baseline +0.15 (mais sutil pro próprio char — você não
--- precisa identificar a si mesmo, mas KO pulse ainda registra como feedback).
-local TRANS_SPAWN_PEAK = 0.20
-local TRANS_NORMAL_REMOTE = 0.70
-local TRANS_NORMAL_LOCAL = 0.85
-local TRANS_HEAVY_PEAK = 0.30
+-- Calibração v2 (2026-05-02): primeiro tuning ficou subdimensionado em arena
+-- com 4 chars + hit FX competindo — outlines sumiam. Subimos visibilidade
+-- baseline + spawn peak. LocalPlayer offset: +0.20 (próprio char ainda dimmer
+-- que remotes pra reduzir self-clutter, mas visível).
+local TRANS_SPAWN_PEAK = 0.0
+local TRANS_NORMAL_REMOTE = 0.35
+local TRANS_NORMAL_LOCAL = 0.55
+local TRANS_HEAVY_PEAK = 0.10
 local TRANS_KO_PEAK = 0.0
 
 local SPAWN_PULSE_HZ = 1.5
