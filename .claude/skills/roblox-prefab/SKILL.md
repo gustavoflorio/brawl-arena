@@ -598,9 +598,11 @@ end
 
 **Test dummy também posiciona perto** dos prefabs (e.g. Z=5 à frente da showcase line) — não no (0, 5, 0).
 
-### Phase 3: Visual validation via test dummies
+### Phase 3: Visual validation — NO TEST DUMMIES
 
-Spawn 1+ R15 dummy in **`Workspace.Assets._TestRigs`** (NEVER at Workspace root — pollutes the user's Explorer view), equip the prefabs, ask user to look in Studio.
+**DO NOT spawn HumanoidModel test rigs in the workspace.** User explicitly rejected this workflow ("NAO SPAWNA ESSE DUMMY DE MERDA"). After building prefabs, leave them in the showcase line (`Workspace.Assets.<NomeDoAsset>`) and ask the user to look there OR validate via in-game playtest. User equips the class and sees the accessory on their own character.
+
+If you previously spawned a `_TestRigs` folder via `CreateHumanoidModelFromDescription`, destroy it before reporting completion.
 
 ```lua
 local Players = game:GetService("Players")
@@ -617,17 +619,8 @@ local function ensureTestRigsFolder(): Folder
   return testRigs
 end
 
-local function spawnDummy(name, position)
-  local desc = Instance.new("HumanoidDescription")
-  local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
-  model.Name = name  -- prefix e.g. "BrawlAccessoryTestRig_<class>"
-  model.Parent = ensureTestRigsFolder()  -- NEVER Workspace root
-  model:PivotTo(CFrame.new(position))
-  for _, p in ipairs(model:GetDescendants()) do
-    if p:IsA("BasePart") then p.Anchored = true end
-  end
-  return model
-end
+-- DEPRECATED: don't use. User rejected dummy-based validation workflow.
+-- Validate via showcase line + in-game playtest only.
 
 local function equipFromAssetFolder(dummy, assetFolderName)
   local folder = assets:FindFirstChild(assetFolderName)
